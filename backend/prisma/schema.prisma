@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model IgAccount {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alias            String   @unique
+  igUserId         String   @unique @map("ig_user_id")
+  username         String
+  accessTokenEnc   String   @map("access_token_enc")
+  tokenExpiresAt   DateTime @map("token_expires_at") @db.Timestamptz(6)
+  tokenRefreshedAt DateTime @map("token_refreshed_at") @db.Timestamptz(6)
+  status           String   @default("active") // 'active' | 'needs_reauth'
+  lastError        String?  @map("last_error")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("ig_accounts")
+}
