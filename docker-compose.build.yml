@@ -1,0 +1,10 @@
+# Override SÓ para construir imagens localmente (no seu PC, nunca na VM):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+# Os serviços mantêm o nome de imagem do docker-compose.yml; aqui só se acrescenta de onde construir.
+services:
+  backend:
+    build: ./backend
+  mcp:
+    build: ./mcp
+  frontend:
+    build: ./frontend

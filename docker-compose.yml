@@ -1,4 +1,6 @@
 # Memória: alvo é uma VM de 1 GB, por isso cada serviço tem mem_limit.
+# Todas as imagens (backend, mcp, frontend) são construídas FORA da VM, pelo GitHub Actions, e só baixadas aqui.
+# Para construir localmente: docker compose -f docker-compose.yml -f docker-compose.build.yml build
 # As variáveis ${POSTGRES_*} abaixo são lidas do ".env" da raiz (no servidor: ln -s backend/.env .env)
 # ou de: docker compose --env-file backend/.env ...
 services:
@@ -22,7 +24,7 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    image: ghcr.io/fernandes-ez/metricas-backend:latest
     restart: unless-stopped
     mem_limit: 192m
     depends_on:
@@ -37,7 +39,7 @@ services:
 
   # Conector MCP (claude.ai). Fala com o backend pela rede interna; não vê banco nem tokens do Instagram.
   mcp:
-    build: ./mcp
+    image: ghcr.io/fernandes-ez/metricas-mcp:latest
     restart: unless-stopped
     mem_limit: 160m
     depends_on:
@@ -74,7 +76,11 @@ services:
     mem_limit: 256m
     depends_on:
       - backend
-    env_file: frontend/.env
+    # opcional: sem o arquivo, o painel sobe sem senha configurada (login recusa tudo) e os outros
+    # comandos do compose não quebram. Preencha antes de usar (DEPLOY.md).
+    env_file:
+      - path: frontend/.env
+        required: false
     environment:
       BACKEND_URL: http://backend:3001
       NODE_OPTIONS: --max-old-space-size=192

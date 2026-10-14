@@ -2,12 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 const BACKEND = process.env.BACKEND_URL ?? 'http://backend:3001';
-// normaliza (trim + maiúsculas) antes de validar e de chamar o backend
+// O schema PUBLICADO (entrada) aceita maiúsculas, minúsculas e espaços nas pontas; o servidor
+// normaliza (trim + maiúsculas) e só então aplica a validação estrita (.pipe).
 const alias = z
   .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^[A-Z0-9_-]{1,32}$/)
+  .regex(/^\s*[A-Za-z0-9_-]{1,32}\s*$/)
+  .transform((v) => v.trim().toUpperCase())
+  .pipe(z.string().regex(/^[A-Z0-9_-]{1,32}$/))
   .describe('Apelido da conta (ex.: AQUA); não diferencia maiúsculas de minúsculas. Use listar_contas para ver os disponíveis.');
 
 const reply = (data, isError = false) => ({

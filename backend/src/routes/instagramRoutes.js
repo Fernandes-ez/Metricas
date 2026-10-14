@@ -23,6 +23,17 @@ async function loadAccount(alias, res, notFoundMsg) {
   return account;
 }
 
+// A Graph API às vezes devolve contagem negativa (ex.: saves = -1, medido em AQUA 7d).
+// Contagem negativa não é dado válido: vira null e entra em unsupported_metrics.
+function dropNegatives(obj, names, unsupported) {
+  for (const k of names) {
+    if (typeof obj[k] === "number" && obj[k] < 0) {
+      obj[k] = null;
+      unsupported.push(k);
+    }
+  }
+}
+
 // Insights de um post; degrada métricas não suportadas (valores ausentes = null)
 async function mediaInsights(mediaId, token) {
   const allMetrics = [
@@ -64,6 +75,7 @@ async function mediaInsights(mediaId, token) {
   data.data.forEach((item) => {
     normalized[item.name] = item.values?.[0]?.value ?? null;
   });
+  dropNegatives(normalized, allMetrics, unsupported);
 
   return { ...normalized, unsupported_metrics: unsupported };
 }
@@ -190,7 +202,9 @@ router.get("/accounts/:apelido/insights", async (req, res) => {
       unsupported.push("follows_and_unfollows");
     }
 
-    res.json({ ...normalized, follows, unfollows, unsupported_metrics: unsupported });
+    const out = { ...normalized, follows, unfollows };
+    dropNegatives(out, [...metrics, "follows", "unfollows"], unsupported);
+    res.json({ ...out, unsupported_metrics: unsupported });
   } catch (error) {
     res.status(502).json({ error: error.message, code: error.code });
   }
