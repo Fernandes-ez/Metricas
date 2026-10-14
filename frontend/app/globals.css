@@ -1,0 +1,165 @@
+@import "tailwindcss";
+
+/*
+  Direção: "bancada de instrumentos". Papel verde-acinzentado, tinta quase preta esverdeada,
+  números em fonte mono (tabulares) e UM destaque, o âmbar, reservado ao período atual.
+  O período anterior é sempre cinza. Assim, em qualquer tela, âmbar = "agora".
+*/
+:root {
+  color-scheme: light;
+  --bg: #eceeea;
+  --surface: #f8f9f6;
+  --surface-2: #e1e5de;
+  --ink: #13201a;
+  --muted: #55645c;
+  --line: #cdd4cb;
+  --accent: #e3a008;
+  --accent-ink: #7a4e00;
+  --on-accent: #13201a;
+  --prev: #9aa79f;
+  --up: #17694a;
+  --down: #a5311f;
+  --warn-bg: #fbe9c2;
+  --warn-ink: #5c3b00;
+  --bad-bg: #f6d9d3;
+  --bad-ink: #7a1f12;
+  --shadow: 0 1px 0 rgb(19 32 26 / 0.04), 0 8px 24px -18px rgb(19 32 26 / 0.35);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b120f;
+  --surface: #131c18;
+  --surface-2: #1c2823;
+  --ink: #e7eee9;
+  --muted: #9baba2;
+  --line: #2a3832;
+  --accent: #f2b21b;
+  --accent-ink: #f2b21b;
+  --on-accent: #13201a;
+  --prev: #5d6c64;
+  --up: #5fd39a;
+  --down: #ff8a73;
+  --warn-bg: #3a2c0a;
+  --warn-ink: #f6d58a;
+  --bad-bg: #3d1a14;
+  --bad-ink: #ffc2b5;
+  --shadow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b120f;
+    --surface: #131c18;
+    --surface-2: #1c2823;
+    --ink: #e7eee9;
+    --muted: #9baba2;
+    --line: #2a3832;
+    --accent: #f2b21b;
+    --accent-ink: #f2b21b;
+    --on-accent: #13201a;
+    --prev: #5d6c64;
+    --up: #5fd39a;
+    --down: #ff8a73;
+    --warn-bg: #3a2c0a;
+    --warn-ink: #f6d58a;
+    --bad-bg: #3d1a14;
+    --bad-ink: #ffc2b5;
+    --shadow: none;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-on-accent: var(--on-accent);
+  --color-prev: var(--prev);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-ink: var(--warn-ink);
+  --color-bad-bg: var(--bad-bg);
+  --color-bad-ink: var(--bad-ink);
+  --font-display: var(--f-display), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--f-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--f-data), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--f-body), ui-sans-serif, system-ui, sans-serif;
+  overflow-x: clip; /* nunca rolagem horizontal da página */
+}
+
+/* números: mono tabular, sempre */
+.num {
+  font-family: var(--f-data), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+:where(a, button, input, select, summary, dialog):focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skeleton {
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}
+
+/* painel do post: folha inferior no celular, lateral no desktop */
+dialog.sheet {
+  margin: auto 0 0 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 92dvh;
+  border: 0;
+  border-radius: 16px 16px 0 0;
+  padding: 0;
+  background: var(--surface);
+  color: var(--ink);
+  overflow: hidden;
+}
+dialog.sheet::backdrop {
+  background: rgb(8 14 11 / 0.55);
+}
+@media (min-width: 768px) {
+  dialog.sheet {
+    margin: 0 0 0 auto;
+    width: min(32rem, 100%);
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border-left: 1px solid var(--line);
+  }
+}
