@@ -9,6 +9,7 @@ const instagramRoutes = require("./routes/instagramRoutes");
 const cron = require("node-cron");
 const prisma = require("./services/db");
 const { refreshTokens } = require("./jobs/refreshTokens");
+const { warmMediaInsights } = require("./jobs/warmMediaInsights");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -92,6 +93,11 @@ app.get("/", (req, res) => {
 });
 
 cron.schedule("17 3 * * *", () => refreshTokens().catch(console.error), {
+  timezone: "America/Sao_Paulo",
+});
+
+// aquece o cache de insights dos posts (horário diferente do refresh de tokens)
+cron.schedule("7 4 * * *", () => warmMediaInsights().catch(console.error), {
   timezone: "America/Sao_Paulo",
 });
 

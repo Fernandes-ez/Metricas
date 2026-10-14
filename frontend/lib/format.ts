@@ -37,3 +37,13 @@ export function windows(days: number) {
     range: `${fmtDay(new Date(since))} a ${fmtDay(new Date(until))}`,
   }
 }
+
+const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' })
+/** "há 20 minutos", "há 3 horas"… a partir de um instante ISO. */
+export function ago(iso: string): string {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
+  if (min < 1) return 'agora há pouco'
+  if (min < 60) return rtf.format(-min, 'minute')
+  if (min < 1440) return rtf.format(-Math.round(min / 60), 'hour')
+  return rtf.format(-Math.round(min / 1440), 'day')
+}

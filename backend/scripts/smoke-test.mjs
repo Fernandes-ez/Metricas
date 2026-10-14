@@ -19,7 +19,7 @@ async function call(url) {
   let status, body;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    status = `${res.status} X-Cache=${res.headers.get("x-cache")}`;
+    status = `${res.status} X-Cache=${res.headers.get("x-cache")} X-IG-Calls=${res.headers.get("x-ig-calls")} X-Insights-Pending=${res.headers.get("x-insights-pending")}`;
     body = await res.text();
   } catch (e) {
     status = 'ERRO';
@@ -34,7 +34,7 @@ if (await portBusy()) {
   process.exit(1);
 }
 
-const child = spawn(process.execPath, ['--env-file=.env', 'src/index.js'], { cwd, stdio: ['ignore', 'inherit', 'inherit'] });
+const child = spawn(process.execPath, ['--env-file-if-exists=.env', 'src/index.js'], { cwd, stdio: ['ignore', 'inherit', 'inherit'] });
 try {
   const deadline = Date.now() + 15000;
   let up = false;
@@ -65,6 +65,10 @@ try {
 
   await call(`${BASE}/api/accounts/AQUA/media-insights?limit=3`);
   await call(`${BASE}/api/accounts/TABUA/media-insights`);
+  // ordenação com cache em Postgres: 1ª chamada busca o que falta; a 2ª deve ter X-IG-Calls=0 (ou 1 se a lista expirou)
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=reach&limite=5`);
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=reach&limite=5`);
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=xyz`);
   await call(`${BASE}/api/accounts/NAOEXISTE/insights`);
 } finally {
   child.kill();

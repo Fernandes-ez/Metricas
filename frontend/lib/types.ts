@@ -64,7 +64,23 @@ export interface MediaInsights {
   unsupported_metrics: string[]
 }
 
+/** Chaves de ordenação aceitas por GET /api/accounts/:apelido/media?ordenar= */
+export type SortKey = 'data' | 'reach' | 'views' | 'total_interactions' | 'likes' | 'comments' | 'shares' | 'saved'
+
+/** Post com insights em cache (modo ?ordenar=). null = indisponível. */
+export type SortedMedia = Media & {
+  reach: Num
+  views: Num
+  likes: Num
+  comments: Num
+  shares: Num
+  saved: Num
+  total_interactions: Num
+  /** quando as métricas foram buscadas no Instagram; null = ainda sem cache */
+  fetched_at: string | null
+}
+
 /** Resultado de uma chamada ao backend, sem lançar para os casos esperados. */
 export type Res<T> =
-  | { ok: true; data: T }
+  | { ok: true; data: T; /** posts ainda sendo atualizados em segundo plano (X-Insights-Pending) */ pending?: number }
   | { ok: false; kind: 'reauth' | 'notfound' | 'error'; message: string }

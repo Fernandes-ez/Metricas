@@ -2,17 +2,22 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
-import { ALIAS_RE, getAccounts, getInsights, getMedia, getStatus } from '@/lib/api'
-import { fmtNum, windows } from '@/lib/format'
-import { LABEL } from '@/lib/metrics'
+import { ALIAS_RE, getAccounts, getInsights, getMedia, getMediaSorted, getStatus } from '@/lib/api'
+import { ago, fmtNum, windows } from '@/lib/format'
+import { LABEL, isSortKey } from '@/lib/metrics'
 import { requireSession } from '@/lib/session'
-import type { AccountInsights } from '@/lib/types'
+import type { AccountInsights, SortKey, SortedMedia } from '@/lib/types'
 import { CompareChart, type Row } from '@/components/CompareChart'
 import { PostGrid } from '@/components/PostGrid'
+import { PostSort, sortHref } from '@/components/PostSort'
 import { Kpi, Notice, ReauthNotice, Sk, StatusPill, UnavailableNote } from '@/components/ui'
 
 const PERIODS = [7, 14, 30] as const
-type Props = { params: Promise<{ apelido: string }>; searchParams: Promise<{ dias?: string | string[] }> }
+type Props = {
+  params: Promise<{ apelido: string }>
+  searchParams: Promise<{ dias?: string | string[]; ordenar?: string | string[]; ordem?: string | string[] }>
+}
+const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: (await params).apelido }
@@ -42,8 +47,12 @@ export default async function Conta({ params, searchParams }: Props) {
   await requireSession()
   const { apelido } = await params
   if (!ALIAS_RE.test(apelido)) notFound()
-  const dias = Number((await searchParams).dias)
-  const days = PERIODS.find((p) => p === dias) ?? 7
+  const sp = await searchParams
+  const days = PERIODS.find((p) => p === Number(first(sp.dias))) ?? 7
+  // ordem dos posts na URL: ausente = mais recentes, maior primeiro
+  const o = first(sp.ordenar)
+  const ordenar: SortKey = isSortKey(o) ? o : 'data'
+  const ordem = first(sp.ordem) === 'asc' ? 'asc' : 'desc'
 
   const [st, ac] = await Promise.all([getStatus(), getAccounts()])
   if (!st.ok)
@@ -119,8 +128,9 @@ export default async function Conta({ params, searchParams }: Props) {
             <h2 id="posts" className="font-display text-2xl font-bold tracking-tight">
               Posts recentes
             </h2>
-            <Suspense fallback={<MediaSkeleton />}>
-              <Posts alias={apelido} />
+            <PostSort alias={apelido} dias={days} ordenar={ordenar} ordem={ordem} />
+            <Suspense key={`${ordenar}-${ordem}`} fallback={<MediaSkeleton note={ordenar !== 'data'} />}>
+              <Posts alias={apelido} dias={days} ordenar={ordenar} ordem={ordem} />
             </Suspense>
           </section>
         </>
@@ -193,8 +203,10 @@ async function Insights({ alias, days, win }: { alias: string; days: number; win
   )
 }
 
-async function Posts({ alias }: { alias: string }) {
-  const m = await getMedia(alias, 24)
+async function Posts({ alias, dias, ordenar, ordem }: { alias: string; dias: number; ordenar: SortKey; ordem: 'asc' | 'desc' }) {
+  // padrão (mais recentes, desc) não precisa de insights: lista direta e rápida
+  const plain = ordenar === 'data' && ordem === 'desc'
+  const m = plain ? await getMedia(alias, 24) : await getMediaSorted(alias, ordenar, ordem, 30)
   if (!m.ok)
     return m.kind === 'reauth' ? (
       <ReauthNotice />
@@ -207,10 +219,38 @@ async function Posts({ alias }: { alias: string }) {
     return (
       <Notice title="Nenhum post publicado ainda">Quando esta conta publicar, os posts aparecem aqui com as métricas de cada um.</Notice>
     )
+
+  // métricas em cache: mostra há quanto tempo foram buscadas (a mais antiga)
+  const stamps = plain ? [] : (m.data as Partial<SortedMedia>[]).flatMap((x) => (x.fetched_at ? [x.fetched_at] : []))
+  const oldest = stamps.length ? stamps.reduce((x, y) => (x < y ? x : y)) : null
   return (
     <>
-      <p className="-mt-2 text-sm text-muted">Toque em um post para ver as métricas dele.</p>
-      <PostGrid posts={m.data} conta={alias} />
+      {!!m.pending && (
+        <Notice
+          title={`Buscando métricas de ${m.pending} ${m.pending === 1 ? 'post' : 'posts'} no Instagram…`}
+          action={
+            <Link href={sortHref(alias, dias, ordenar, ordem)} className="inline-block rounded-lg border border-line px-3 py-2 text-sm font-medium">
+              Atualizar a lista
+            </Link>
+          }
+        >
+          Os posts sem métrica aparecem no fim. Em alguns segundos o restante fica pronto.
+        </Notice>
+      )}
+      <p className="text-sm text-muted">
+        {plain ? 'Toque em um post para ver as métricas dele.' : (
+          <>
+            Ordenando os {m.data.length} posts mais recentes.
+            {oldest && (
+              <>
+                {' '}
+                Métricas atualizadas <span title="A mais antiga entre os posts desta lista">{ago(oldest)}</span>.
+              </>
+            )}
+          </>
+        )}
+      </p>
+      <PostGrid posts={m.data} conta={alias} metric={ordenar} />
     </>
   )
 }
@@ -236,9 +276,11 @@ function InsightsSkeleton() {
   )
 }
 
-function MediaSkeleton() {
+function MediaSkeleton({ note = false }: { note?: boolean }) {
   return (
-    <div aria-busy="true" aria-label="Carregando posts" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+    <div aria-busy="true" aria-label="Carregando posts" className="space-y-3">
+      {note && <p className="text-sm text-muted">Preparando as métricas dos posts. Na primeira vez pode levar alguns segundos.</p>}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {Array.from({ length: 8 }, (_, i) => (
         <div key={i} className="overflow-hidden rounded-xl border border-line bg-surface">
           <Sk className="aspect-square w-full rounded-none" />
@@ -248,6 +290,7 @@ function MediaSkeleton() {
           </div>
         </div>
       ))}
+      </div>
     </div>
   )
 }

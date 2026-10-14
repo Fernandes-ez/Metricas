@@ -3,6 +3,7 @@ const router = express.Router();
 const { igGet, cacheHeader } = require("../services/igClient");
 const prisma = require("../services/db");
 const { getAccount, listActiveAccounts } = require("../services/accountRepository");
+const { dropNegatives, mediaInsights, withMetrics, sortPosts, SORT_KEYS } = require("../services/mediaInsights");
 
 router.use(cacheHeader);
 
@@ -21,63 +22,6 @@ async function loadAccount(alias, res, notFoundMsg) {
     return null;
   }
   return account;
-}
-
-// A Graph API às vezes devolve contagem negativa (ex.: saves = -1, medido em AQUA 7d).
-// Contagem negativa não é dado válido: vira null e entra em unsupported_metrics.
-function dropNegatives(obj, names, unsupported) {
-  for (const k of names) {
-    if (typeof obj[k] === "number" && obj[k] < 0) {
-      obj[k] = null;
-      unsupported.push(k);
-    }
-  }
-}
-
-// Insights de um post; degrada métricas não suportadas (valores ausentes = null)
-async function mediaInsights(mediaId, token) {
-  const allMetrics = [
-    "reach",
-    "views",
-    "likes",
-    "comments",
-    "shares",
-    "saved",
-    "total_interactions",
-  ];
-  let metrics = allMetrics;
-  const unsupported = [];
-
-  let data;
-  // Erro 100: remove da lista as métricas citadas na mensagem e repete.
-  for (;;) {
-    try {
-      data = await igGet(
-        `${mediaId}/insights`,
-        { metric: metrics.join(",") },
-        token,
-      );
-      break;
-    } catch (e) {
-      const bad =
-        e.code === 100
-          ? metrics.filter((m) => new RegExp(`\\b${m}\\b`).test(e.message))
-          : [];
-      // sem métrica identificável (ou todas): não dá para degradar, propaga
-      if (!bad.length || bad.length === metrics.length) throw e;
-      unsupported.push(...bad);
-      metrics = metrics.filter((m) => !bad.includes(m));
-    }
-  }
-
-  const normalized = {};
-  allMetrics.forEach((m) => (normalized[m] = null));
-  data.data.forEach((item) => {
-    normalized[item.name] = item.values?.[0]?.value ?? null;
-  });
-  dropNegatives(normalized, allMetrics, unsupported);
-
-  return { ...normalized, unsupported_metrics: unsupported };
 }
 
 // Status dos tokens (sem tokens)
@@ -210,24 +154,38 @@ router.get("/accounts/:apelido/insights", async (req, res) => {
   }
 });
 
-// c) Últimos posts
+// c) Últimos posts.
+// Sem ?ordenar: comportamento original (lista crua do Instagram).
+// Com ?ordenar=data|reach|views|total_interactions|likes|comments|shares|saved[&ordem=asc|desc][&limite=N]:
+// ordena entre os N posts mais recentes (máx. 50) usando insights em cache no Postgres; só busca na
+// Graph API os posts sem cache ou vencidos (1 h para posts de até 7 dias, 24 h para os mais antigos).
 router.get("/accounts/:apelido/media", async (req, res) => {
   const { apelido } = req.params;
-  const { limit = 12 } = req.query;
+  const { ordenar, ordem = "desc" } = req.query;
+  const limit = req.query.limite ?? req.query.limit ?? 12;
+
+  if (ordenar !== undefined) {
+    if (!SORT_KEYS.includes(ordenar))
+      return res.status(400).json({ error: `ordenar deve ser um de: ${SORT_KEYS.join(", ")}` });
+    if (!["asc", "desc"].includes(ordem))
+      return res.status(400).json({ error: "ordem deve ser asc ou desc" });
+  }
   const account = await loadAccount(apelido, res, "Apelido não encontrado");
   if (!account) return;
 
   try {
+    const n = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 50);
     const data = await igGet(
       `${account.userId}/media`,
-      {
-        fields:
-          MEDIA_FIELDS,
-        limit,
-      },
+      { fields: MEDIA_FIELDS, limit: ordenar === undefined ? limit : n },
       account.token,
     );
-    res.json(data.data);
+    if (ordenar === undefined) return res.json(data.data);
+
+    // ordenar=data só lê o cache (não gasta chamadas); as métricas vêm se já existirem
+    const { posts, pending } = await withMetrics(account, data.data, { refresh: ordenar !== "data" });
+    res.set("X-Insights-Pending", String(pending)); // >0: ainda atualizando em segundo plano
+    res.json(sortPosts(posts, ordenar, ordem));
   } catch (error) {
     res.status(502).json({ error: error.message, code: error.code });
   }

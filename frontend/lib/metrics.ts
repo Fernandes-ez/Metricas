@@ -29,3 +29,17 @@ export function mediaKind(m: { media_type: string; media_product_type?: string }
   if (m.media_type === 'VIDEO') return 'Vídeo'
   return 'Foto'
 }
+
+import type { SortKey } from './types'
+
+export const SORT_OPTIONS: { value: SortKey; label: string; short: string }[] = [
+  { value: 'data', label: 'Mais recentes', short: 'Data' },
+  { value: 'reach', label: 'Maior alcance', short: 'Alcance' },
+  { value: 'views', label: 'Mais views', short: 'Visualizações' },
+  { value: 'total_interactions', label: 'Mais interações', short: 'Interações' },
+  { value: 'likes', label: 'Mais curtidas', short: 'Curtidas' },
+  { value: 'comments', label: 'Mais comentários', short: 'Comentários' },
+  { value: 'shares', label: 'Mais compartilhamentos', short: 'Compartilhamentos' },
+  { value: 'saved', label: 'Mais salvamentos', short: 'Salvamentos' },
+]
+export const isSortKey = (v: unknown): v is SortKey => SORT_OPTIONS.some((o) => o.value === v)

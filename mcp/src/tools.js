@@ -36,7 +36,7 @@ async function get(path, { stripIds = false, map } = {}) {
   if (r.status === 409) return reply('Conta precisa ser reconectada (needs_reauth). Reconecte a conta no Instagram.', true);
   if (!r.ok) return reply(`Backend respondeu ${r.status}: ${body?.error ?? 'erro desconhecido'}`, true);
   const out = stripIds ? clean(body) : body;
-  return reply(map ? map(out) : out); // unsupported_metrics, quando existir, segue no corpo
+  return reply(map ? map(out, r.headers) : out); // unsupported_metrics, quando existir, segue no corpo
 }
 
 const CAPTION_MAX = 150;
@@ -48,6 +48,17 @@ const slim = (posts) =>
     const c = caption && [...caption];
     return c ? { ...m, caption: c.length > CAPTION_MAX ? c.slice(0, CAPTION_MAX - 1).join('') + '…' : caption } : m;
   });
+
+// com ordenar o backend pode estar atualizando métricas em segundo plano (X-Insights-Pending > 0)
+const withNotice = (posts, headers) => {
+  const out = slim(posts);
+  const n = Number(headers.get('x-insights-pending') || 0);
+  return n > 0
+    ? { aviso: n + ' post(s) ainda sem métricas atualizadas (o backend está buscando); repita a consulta em alguns segundos.', posts: out }
+    : out;
+};
+
+const SORT = ['data', 'reach', 'views', 'total_interactions', 'likes', 'comments', 'shares', 'saved'];
 
 const ro = { readOnlyHint: true, openWorldHint: true };
 
@@ -92,11 +103,21 @@ export function buildServer() {
   s.registerTool(
     'midias_conta',
     {
-      description: 'Últimos posts da conta (id, legenda de até 150 caracteres, tipo, data, link permanente, curtidas, comentários), sem URLs de imagem/vídeo. O apelido não diferencia maiúsculas de minúsculas. Use o id em insights_midia.',
-      inputSchema: { apelido: alias, limite: z.number().int().min(1).max(50).default(10).describe('Quantidade de posts (padrão 10, máximo 50)') },
+      description:
+        'Posts da conta (id, legenda de até 150 caracteres, tipo, data, link permanente, curtidas, comentários), sem URLs de imagem/vídeo. O apelido não diferencia maiúsculas de minúsculas. Use o id em insights_midia. Com "ordenar" (reach, views, total_interactions, likes, comments, shares, saved ou data), ordena entre os "limite" posts mais recentes e inclui as métricas de cada post (reach, views, likes, comments, shares, saved, total_interactions; null = indisponível, vai sempre para o fim) e fetched_at (quando foram buscadas; ficam em cache: 1 h para posts de até 7 dias, 24 h para os mais antigos). Para achar os melhores posts, use ordenar com limite maior (até 50). Se aparecer "aviso", alguns posts ainda estão sendo atualizados: repita a consulta.',
+      inputSchema: {
+        apelido: alias,
+        limite: z.number().int().min(1).max(50).default(10).describe('Quantidade de posts (padrão 10, máximo 50). Com ordenar, é a janela dos posts mais recentes considerada.'),
+        ordenar: z.enum(SORT).optional().describe('Campo de ordenação; sem ele, vem do mais recente ao mais antigo, sem métricas'),
+        ordem: z.enum(['desc', 'asc']).default('desc').describe('desc (maior primeiro, padrão) ou asc; só vale com ordenar'),
+      },
       annotations: ro,
     },
-    ({ apelido, limite }) => get(`/api/accounts/${encodeURIComponent(apelido)}/media?limit=${limite}`, { map: slim }),
+    ({ apelido, limite, ordenar, ordem }) =>
+      get(
+        `/api/accounts/${encodeURIComponent(apelido)}/media?limit=${limite}` + (ordenar ? `&ordenar=${ordenar}&ordem=${ordem}` : ''),
+        { map: withNotice },
+      ),
   );
 
   s.registerTool(

@@ -7,3 +7,4 @@ node_modules/
 
 mcp/.env
 mcp/data/
+docker-compose.local.yml

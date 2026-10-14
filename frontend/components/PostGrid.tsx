@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { loadPostInsights } from '@/lib/actions'
 import { fmtDate, fmtDateTime, fmtFull, fmtNum } from '@/lib/format'
-import { LABEL, UNAVAILABLE, WHY_DEFAULT, mediaKind } from '@/lib/metrics'
-import type { Media, MediaInsights, Res } from '@/lib/types'
+import { LABEL, SORT_OPTIONS, UNAVAILABLE, WHY_DEFAULT, mediaKind } from '@/lib/metrics'
+import type { Media, MediaInsights, Num, Res, SortKey } from '@/lib/types'
 
 const PANEL_METRICS = ['reach', 'views', 'likes', 'comments', 'shares', 'saved', 'total_interactions'] as const
 
@@ -29,7 +29,21 @@ function Thumb({ m, className = '' }: { m: Media; className?: string }) {
   )
 }
 
-export function PostGrid({ posts, conta }: { posts: Media[]; conta: string }) {
+/** Métrica da ordenação, em destaque no card (posts sem insights em cache não têm o campo). */
+function Highlight({ m, metric }: { m: Media; metric: SortKey }) {
+  const v = (m as Media & Partial<Record<SortKey, Num>>)[metric]
+  const label = SORT_OPTIONS.find((o) => o.value === metric)?.short ?? metric
+  return (
+    <p className="mt-2 flex flex-col gap-0.5 rounded-md bg-surface-2 px-2 py-1.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
+      <span className="break-words text-[11px] leading-tight text-muted sm:text-xs">{label}</span>
+      <span className="num text-base font-semibold text-accent-ink" title={v == null ? UNAVAILABLE : fmtFull(v)}>
+        {v == null ? '—' : fmtNum(v)}
+      </span>
+    </p>
+  )
+}
+
+export function PostGrid({ posts, conta, metric }: { posts: Media[]; conta: string; metric?: SortKey }) {
   const [open, setOpen] = useState<Media | null>(null)
   return (
     <>
@@ -49,6 +63,7 @@ export function PostGrid({ posts, conta }: { posts: Media[]; conta: string }) {
               <div className="p-3">
                 <p className="num text-xs text-muted">{fmtDate(m.timestamp)}</p>
                 <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm">{m.caption?.trim() || <span className="text-muted">Sem legenda</span>}</p>
+                {metric && metric !== 'data' && <Highlight m={m} metric={metric} />}
                 <p className="num mt-2 text-xs text-muted">
                   <span title="Curtidas">♥ {m.like_count == null ? '—' : fmtNum(m.like_count)}</span>
                   {'  '}

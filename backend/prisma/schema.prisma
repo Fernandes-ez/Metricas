@@ -22,3 +22,24 @@ model IgAccount {
 
   @@map("ig_accounts")
 }
+
+// Cache dos insights por post (ver src/services/mediaInsights.js). null = indisponível.
+model MediaInsight {
+  alias             String
+  mediaId           String   @map("media_id")
+  postedAt          DateTime @map("posted_at") @db.Timestamptz(6)
+  mediaType         String   @map("media_type")
+  mediaProductType  String?  @map("media_product_type")
+  reach             Int?
+  views             Int?
+  likes             Int?
+  comments          Int?
+  shares            Int?
+  saved             Int?
+  totalInteractions Int?     @map("total_interactions")
+  fetchedAt         DateTime @map("fetched_at") @db.Timestamptz(6)
+
+  @@id([alias, mediaId])
+  @@index([alias, postedAt])
+  @@map("media_insights")
+}

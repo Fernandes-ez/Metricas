@@ -131,4 +131,6 @@ docker compose --env-file backend/.env -f docker-compose.yml -f docker-compose.b
 - Saúde do backend (só de dentro da VM): `curl http://127.0.0.1:3001/health`
 - Backup: `docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup_$(date +%F).sql`
   Restore: `docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"' < backup.sql`
+- Banco: as migrações do Prisma rodam sozinhas ao iniciar o backend (`prisma migrate deploy` no comando da imagem); basta `docker compose pull && docker compose up -d`.
+- Cache de insights por post (tabela `media_insights`): o painel e o MCP ordenam posts por métrica sem repetir chamadas à Graph API. Posts com até 7 dias renovam a cada 1 h; mais antigos, a cada 24 h. Um job diário às 04:07 (São Paulo) aquece os últimos 30 posts de cada conta; o refresh de tokens continua às 03:17.
 - Memória (`mem_limit`): db 256 MB, backend 192 MB, mcp 160 MB, frontend 256 MB, caddy 64 MB.

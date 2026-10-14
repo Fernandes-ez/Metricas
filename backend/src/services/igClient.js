@@ -8,10 +8,11 @@ const reqStore = new AsyncLocalStorage();
 
 // Middleware: define X-Cache = HIT (tudo veio do cache) ou MISS
 function cacheHeader(req, res, next) {
-  const store = { miss: false, calls: 0 };
+  const store = { miss: false, calls: 0, fetches: 0 };
   const json = res.json.bind(res);
   res.json = (body) => {
     res.set("X-Cache", store.calls > 0 && !store.miss ? "HIT" : "MISS");
+    res.set("X-IG-Calls", String(store.fetches)); // chamadas reais à Graph API nesta requisição
     return json(body);
   };
   reqStore.run(store, next);
@@ -24,7 +25,10 @@ async function igGet(path, params = {}, token) {
   if (store) store.calls++;
   const hit = cache.get(key);
   if (hit && hit.exp > Date.now()) return hit.data;
-  if (store) store.miss = true;
+  if (store) {
+    store.miss = true;
+    store.fetches++;
+  }
   const data = await igFetch(path, params, token);
   // ponytail: varredura simples; sem LRU
   if (cache.size > 500)

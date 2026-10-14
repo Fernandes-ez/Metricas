@@ -55,7 +55,8 @@ export function CompareChart({ title, rows }: { title: string; rows: Row[] }) {
         </ResponsiveContainer>
       </div>
 
-      <table className="sr-only">
+      <div className="sr-only">
+      <table>
         <caption>{title}: período atual e período anterior</caption>
         <thead>
           <tr>
@@ -74,6 +75,7 @@ export function CompareChart({ title, rows }: { title: string; rows: Row[] }) {
           ))}
         </tbody>
       </table>
+      </div>
     </figure>
   )
 }
