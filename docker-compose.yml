@@ -1,9 +1,16 @@
+# Memória: alvo é uma VM de 1 GB, por isso cada serviço tem mem_limit.
+# As variáveis ${POSTGRES_*} abaixo são lidas do ".env" da raiz (no servidor: ln -s backend/.env .env)
+# ou de: docker compose --env-file backend/.env ...
 services:
   db:
     image: postgres:17
     restart: unless-stopped
-    # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB vêm do backend/.env
-    env_file: backend/.env
+    mem_limit: 256m
+    # só o necessário para o Postgres (o backend/.env tem tokens do Instagram)
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER (ln -s backend/.env .env, ou use --env-file backend/.env)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -17,6 +24,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    mem_limit: 192m
     depends_on:
       db:
         condition: service_healthy
@@ -27,8 +35,53 @@ services:
     ports:
       - "127.0.0.1:3001:3001"
 
-  # TODO: serviço "frontend" (Next.js) entra aqui.
-  # TODO: proxy Caddy (HTTPS, 80/443) entra aqui, na frente de backend e frontend.
+  # Conector MCP (claude.ai). Fala com o backend pela rede interna; não vê banco nem tokens do Instagram.
+  mcp:
+    build: ./mcp
+    restart: unless-stopped
+    mem_limit: 160m
+    depends_on:
+      - backend
+    env_file: mcp/.env
+    environment:
+      BACKEND_URL: http://backend:3001
+    volumes:
+      - mcpdata:/data
+    # sem "ports": só o Caddy alcança este serviço
+
+  # HTTPS (80/443): /mcp e OAuth vão para o mcp; o resto, para o frontend.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 64m
+    depends_on:
+      - mcp
+      - frontend
+    env_file: mcp/.env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+
+  # Painel Next.js. A imagem é construída FORA da VM (DEPLOY.md) e baixada do registry.
+  frontend:
+    image: ghcr.io/fernandes-ez/metricas-frontend:latest
+    restart: unless-stopped
+    mem_limit: 256m
+    depends_on:
+      - backend
+    env_file: frontend/.env
+    environment:
+      BACKEND_URL: http://backend:3001
+      NODE_OPTIONS: --max-old-space-size=192
+    # sem "ports": só o Caddy alcança este serviço
 
 volumes:
   pgdata:
+  mcpdata:
+  caddydata:
+  caddyconfig:

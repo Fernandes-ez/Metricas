@@ -1,8 +1,13 @@
 const express = require("express");
 const router = express.Router();
-const { igGet } = require("../services/igClient");
+const { igGet, cacheHeader } = require("../services/igClient");
 const prisma = require("../services/db");
 const { getAccount, listActiveAccounts } = require("../services/accountRepository");
+
+router.use(cacheHeader);
+
+const MEDIA_FIELDS =
+  "id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count,media_url,thumbnail_url";
 
 // 404 se não existe, 409 se precisa reconectar; senão devolve a conta (já com token)
 async function loadAccount(alias, res, notFoundMsg) {
@@ -16,6 +21,51 @@ async function loadAccount(alias, res, notFoundMsg) {
     return null;
   }
   return account;
+}
+
+// Insights de um post; degrada métricas não suportadas (valores ausentes = null)
+async function mediaInsights(mediaId, token) {
+  const allMetrics = [
+    "reach",
+    "views",
+    "likes",
+    "comments",
+    "shares",
+    "saved",
+    "total_interactions",
+  ];
+  let metrics = allMetrics;
+  const unsupported = [];
+
+  let data;
+  // Erro 100: remove da lista as métricas citadas na mensagem e repete.
+  for (;;) {
+    try {
+      data = await igGet(
+        `${mediaId}/insights`,
+        { metric: metrics.join(",") },
+        token,
+      );
+      break;
+    } catch (e) {
+      const bad =
+        e.code === 100
+          ? metrics.filter((m) => new RegExp(`\\b${m}\\b`).test(e.message))
+          : [];
+      // sem métrica identificável (ou todas): não dá para degradar, propaga
+      if (!bad.length || bad.length === metrics.length) throw e;
+      unsupported.push(...bad);
+      metrics = metrics.filter((m) => !bad.includes(m));
+    }
+  }
+
+  const normalized = {};
+  allMetrics.forEach((m) => (normalized[m] = null));
+  data.data.forEach((item) => {
+    normalized[item.name] = item.values?.[0]?.value ?? null;
+  });
+
+  return { ...normalized, unsupported_metrics: unsupported };
 }
 
 // Status dos tokens (sem tokens)
@@ -158,12 +208,42 @@ router.get("/accounts/:apelido/media", async (req, res) => {
       `${account.userId}/media`,
       {
         fields:
-          "id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count",
+          MEDIA_FIELDS,
         limit,
       },
       account.token,
     );
     res.json(data.data);
+  } catch (error) {
+    res.status(502).json({ error: error.message, code: error.code });
+  }
+});
+
+// c2) Últimos posts já com insights (concorrência máx. 4; erro num post não derruba a lista)
+router.get("/accounts/:apelido/media-insights", async (req, res) => {
+  const { apelido } = req.params;
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 12, 1), 50);
+  const account = await loadAccount(apelido, res, "Apelido não encontrado");
+  if (!account) return;
+
+  try {
+    const media = (
+      await igGet(`${account.userId}/media`, { fields: MEDIA_FIELDS, limit }, account.token)
+    ).data;
+    const out = new Array(media.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < media.length) {
+        const i = next++;
+        try {
+          out[i] = { ...media[i], insights: await mediaInsights(media[i].id, account.token) };
+        } catch (e) {
+          out[i] = { ...media[i], insights: null, error: e.message };
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, media.length) }, worker));
+    res.json(out);
   } catch (error) {
     res.status(502).json({ error: error.message, code: error.code });
   }
@@ -181,47 +261,7 @@ router.get("/media/:mediaId/insights", async (req, res) => {
   if (!account) return;
 
   try {
-    const allMetrics = [
-      "reach",
-      "views",
-      "likes",
-      "comments",
-      "shares",
-      "saved",
-      "total_interactions",
-    ];
-    let metrics = allMetrics;
-    const unsupported = [];
-
-    let data;
-    // Erro 100: remove da lista as métricas citadas na mensagem e repete.
-    for (;;) {
-      try {
-        data = await igGet(
-          `${mediaId}/insights`,
-          { metric: metrics.join(",") },
-          account.token,
-        );
-        break;
-      } catch (e) {
-        const bad =
-          e.code === 100
-            ? metrics.filter((m) => new RegExp(`\\b${m}\\b`).test(e.message))
-            : [];
-        // sem métrica identificável (ou todas): não dá para degradar, propaga
-        if (!bad.length || bad.length === metrics.length) throw e;
-        unsupported.push(...bad);
-        metrics = metrics.filter((m) => !bad.includes(m));
-      }
-    }
-
-    const normalized = {};
-    allMetrics.forEach((m) => (normalized[m] = null));
-    data.data.forEach((item) => {
-      normalized[item.name] = item.values?.[0]?.value ?? null;
-    });
-
-    res.json({ ...normalized, unsupported_metrics: unsupported });
+    res.json(await mediaInsights(mediaId, account.token));
   } catch (error) {
     res.status(502).json({ error: error.message, code: error.code });
   }

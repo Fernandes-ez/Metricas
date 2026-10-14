@@ -19,7 +19,7 @@ async function call(url) {
   let status, body;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    status = res.status;
+    status = `${res.status} X-Cache=${res.headers.get("x-cache")}`;
     body = await res.text();
   } catch (e) {
     status = 'ERRO';
@@ -63,6 +63,8 @@ try {
   if (reel) await call(`${BASE}/api/media/${reel.id}/insights?account=AQUA`);
   else console.log('sem reels em AQUA\n');
 
+  await call(`${BASE}/api/accounts/AQUA/media-insights?limit=3`);
+  await call(`${BASE}/api/accounts/TABUA/media-insights`);
   await call(`${BASE}/api/accounts/NAOEXISTE/insights`);
 } finally {
   child.kill();

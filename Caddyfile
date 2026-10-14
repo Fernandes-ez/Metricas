@@ -1,0 +1,17 @@
+# HTTPS automático (Let's Encrypt). MCP_DOMAIN (em mcp/.env) é o domínio público único.
+# Só o Caddy expõe portas; backend, mcp e frontend ficam na rede interna.
+{$MCP_DOMAIN} {
+	encode zstd gzip
+
+	# Conector MCP (claude.ai): endpoint, OAuth e metadata. /.well-known/* inteiro vai ao mcp (404 limpo para o que ele não serve);
+	# o desafio ACME HTTP-01 (/.well-known/acme-challenge/) é atendido pelo próprio Caddy antes destas rotas.
+	@mcp path /mcp /authorize /token /register /revoke /mcp-login /.well-known/*
+	handle @mcp {
+		reverse_proxy mcp:3002
+	}
+
+	# todo o resto: painel (tem login próprio)
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
