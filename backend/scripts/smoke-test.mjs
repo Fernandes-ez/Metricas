@@ -68,6 +68,11 @@ try {
   // ordenação com cache em Postgres: 1ª chamada busca o que falta; a 2ª deve ter X-IG-Calls=0 (ou 1 se a lista expirou)
   await call(`${BASE}/api/accounts/AQUA/media?ordenar=reach&limite=5`);
   await call(`${BASE}/api/accounts/AQUA/media?ordenar=reach&limite=5`);
+  // retenção (só reels) e taxas sobre o alcance
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=avg_watch_time&limite=5`);
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=taxa_interacao&limite=5`);
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=taxa_compartilhamento&ordem=asc&limite=5`);
+  await call(`${BASE}/api/accounts/AQUA/media?ordenar=taxa_salvamento&limite=5`);
   await call(`${BASE}/api/accounts/AQUA/media?ordenar=xyz`);
   await call(`${BASE}/api/accounts/NAOEXISTE/insights`);
 } finally {

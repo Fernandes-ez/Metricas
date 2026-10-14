@@ -58,7 +58,10 @@ const withNotice = (posts, headers) => {
     : out;
 };
 
-const SORT = ['data', 'reach', 'views', 'total_interactions', 'likes', 'comments', 'shares', 'saved'];
+const SORT = [
+  'data', 'reach', 'views', 'total_interactions', 'likes', 'comments', 'shares', 'saved',
+  'avg_watch_time', 'taxa_interacao', 'taxa_compartilhamento', 'taxa_salvamento',
+];
 
 const ro = { readOnlyHint: true, openWorldHint: true };
 
@@ -104,7 +107,7 @@ export function buildServer() {
     'midias_conta',
     {
       description:
-        'Posts da conta (id, legenda de até 150 caracteres, tipo, data, link permanente, curtidas, comentários), sem URLs de imagem/vídeo. O apelido não diferencia maiúsculas de minúsculas. Use o id em insights_midia. Com "ordenar" (reach, views, total_interactions, likes, comments, shares, saved ou data), ordena entre os "limite" posts mais recentes e inclui as métricas de cada post (reach, views, likes, comments, shares, saved, total_interactions; null = indisponível, vai sempre para o fim) e fetched_at (quando foram buscadas; ficam em cache: 1 h para posts de até 7 dias, 24 h para os mais antigos). Para achar os melhores posts, use ordenar com limite maior (até 50). Se aparecer "aviso", alguns posts ainda estão sendo atualizados: repita a consulta.',
+        'Posts da conta (id, legenda de até 150 caracteres, tipo, data, link permanente, curtidas, comentários), sem URLs de imagem/vídeo. O apelido não diferencia maiúsculas de minúsculas. Use o id em insights_midia. Com "ordenar" (reach, views, total_interactions, likes, comments, shares, saved, avg_watch_time, taxa_interacao, taxa_compartilhamento, taxa_salvamento ou data), ordena entre os "limite" posts mais recentes e inclui as métricas de cada post: reach, views, likes, comments, shares, saved, total_interactions; avg_watch_time e total_watch_time (SÓ reels, em MILISSEGUNDOS: 6671 = 6,7 s; null nos outros tipos); e as taxas taxa_interacao (interações/alcance), taxa_compartilhamento (compartilhamentos/alcance) e taxa_salvamento (salvamentos/alcance), que são FRAÇÕES do alcance (0,114 = 11,4%; null se o alcance for 0 ou ausente). null = indisponível e vai sempre para o fim, em qualquer ordem. fetched_at = quando as métricas foram buscadas (em cache: 1 h para posts de até 7 dias, 24 h para os mais antigos). A API não informa a duração do vídeo, então não há percentual assistido. Para achar os melhores posts, use ordenar com limite maior (até 50). Se aparecer "aviso", alguns posts ainda estão sendo atualizados: repita a consulta.',
       inputSchema: {
         apelido: alias,
         limite: z.number().int().min(1).max(50).default(10).describe('Quantidade de posts (padrão 10, máximo 50). Com ordenar, é a janela dos posts mais recentes considerada.'),
@@ -124,7 +127,7 @@ export function buildServer() {
     'insights_midia',
     {
       description:
-        'Métricas de um post (alcance, views, curtidas, comentários, compartilhamentos, salvamentos, interações). null = indisponível. O apelido da conta não diferencia maiúsculas de minúsculas.',
+        'Métricas de um post: reach, views, likes, comments, shares, saved, total_interactions; para REELS também avg_watch_time (tempo médio assistido) e total_watch_time (tempo total assistido), ambos em MILISSEGUNDOS (6671 = 6,7 s), null nos outros tipos; e as taxas taxa_interacao, taxa_compartilhamento e taxa_salvamento, FRAÇÕES do alcance (0,114 = 11,4%; null se o alcance for 0 ou ausente). null = indisponível. A API não informa a duração do vídeo (sem percentual assistido). O apelido da conta não diferencia maiúsculas de minúsculas.',
       inputSchema: { id: z.string().regex(/^\d{1,30}$/).describe('Id do post, obtido em midias_conta'), conta: alias },
       annotations: ro,
     },

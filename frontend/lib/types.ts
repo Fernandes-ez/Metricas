@@ -53,7 +53,7 @@ export interface Media {
 }
 
 /** GET /api/media/:id/insights?account= */
-export interface MediaInsights {
+export interface MediaInsights extends Extras {
   reach: Num
   views: Num
   likes: Num
@@ -65,10 +65,31 @@ export interface MediaInsights {
 }
 
 /** Chaves de ordenação aceitas por GET /api/accounts/:apelido/media?ordenar= */
-export type SortKey = 'data' | 'reach' | 'views' | 'total_interactions' | 'likes' | 'comments' | 'shares' | 'saved'
+export type SortKey =
+  | 'data'
+  | 'reach'
+  | 'views'
+  | 'total_interactions'
+  | 'likes'
+  | 'comments'
+  | 'shares'
+  | 'saved'
+  | 'avg_watch_time'
+  | 'taxa_interacao'
+  | 'taxa_compartilhamento'
+  | 'taxa_salvamento'
+
+/** Extras: tempo de visualização (só reels, em milissegundos) e taxas como fração do alcance (0,114). */
+export interface Extras {
+  avg_watch_time: Num
+  total_watch_time: Num
+  taxa_interacao: Num
+  taxa_compartilhamento: Num
+  taxa_salvamento: Num
+}
 
 /** Post com insights em cache (modo ?ordenar=). null = indisponível. */
-export type SortedMedia = Media & {
+export type SortedMedia = Media & Extras & {
   reach: Num
   views: Num
   likes: Num

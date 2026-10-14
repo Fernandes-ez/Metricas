@@ -37,6 +37,10 @@ model MediaInsight {
   shares            Int?
   saved             Int?
   totalInteractions Int?     @map("total_interactions")
+  // reels: tempo de visualização em ms; retentionFetchedAt null = ainda não buscado
+  avgWatchTimeMs    Int?     @map("avg_watch_time_ms")
+  totalWatchTimeMs  BigInt?  @map("total_watch_time_ms")
+  retentionFetchedAt DateTime? @map("retention_fetched_at") @db.Timestamptz(6)
   fetchedAt         DateTime @map("fetched_at") @db.Timestamptz(6)
 
   @@id([alias, mediaId])

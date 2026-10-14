@@ -3,7 +3,15 @@ const router = express.Router();
 const { igGet, cacheHeader } = require("../services/igClient");
 const prisma = require("../services/db");
 const { getAccount, listActiveAccounts } = require("../services/accountRepository");
-const { dropNegatives, mediaInsights, withMetrics, sortPosts, SORT_KEYS } = require("../services/mediaInsights");
+const {
+  dropNegatives,
+  mediaInsights,
+  isReelById,
+  withRates,
+  withMetrics,
+  sortPosts,
+  SORT_KEYS,
+} = require("../services/mediaInsights");
 
 router.use(cacheHeader);
 
@@ -208,7 +216,7 @@ router.get("/accounts/:apelido/media-insights", async (req, res) => {
       while (next < media.length) {
         const i = next++;
         try {
-          out[i] = { ...media[i], insights: await mediaInsights(media[i].id, account.token) };
+          out[i] = { ...media[i], insights: await mediaInsights(media[i].id, account.token, { reel: media[i].media_product_type === "REELS" }) };
         } catch (e) {
           out[i] = { ...media[i], insights: null, error: e.message };
         }
@@ -233,7 +241,8 @@ router.get("/media/:mediaId/insights", async (req, res) => {
   if (!account) return;
 
   try {
-    res.json(await mediaInsights(mediaId, account.token));
+    const reel = await isReelById(account, mediaId);
+    res.json(withRates(await mediaInsights(mediaId, account.token, { reel })));
   } catch (error) {
     res.status(502).json({ error: error.message, code: error.code });
   }

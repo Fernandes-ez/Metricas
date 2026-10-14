@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { loadPostInsights } from '@/lib/actions'
 import { fmtDate, fmtDateTime, fmtFull, fmtNum } from '@/lib/format'
-import { LABEL, SORT_OPTIONS, UNAVAILABLE, WHY_DEFAULT, mediaKind } from '@/lib/metrics'
+import { LABEL, RATE_HELP, SORT_OPTIONS, UNAVAILABLE, WHY_DEFAULT, fmtMetric, fmtMetricFull, mediaKind } from '@/lib/metrics'
 import type { Media, MediaInsights, Num, Res, SortKey } from '@/lib/types'
 
 const PANEL_METRICS = ['reach', 'views', 'likes', 'comments', 'shares', 'saved', 'total_interactions'] as const
@@ -36,8 +36,8 @@ function Highlight({ m, metric }: { m: Media; metric: SortKey }) {
   return (
     <p className="mt-2 flex flex-col gap-0.5 rounded-md bg-surface-2 px-2 py-1.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2">
       <span className="break-words text-[11px] leading-tight text-muted sm:text-xs">{label}</span>
-      <span className="num text-base font-semibold text-accent-ink" title={v == null ? UNAVAILABLE : fmtFull(v)}>
-        {v == null ? '—' : fmtNum(v)}
+      <span className="num text-base font-semibold text-accent-ink" title={v == null ? UNAVAILABLE : fmtMetricFull(metric, v)}>
+        {v == null ? '—' : fmtMetric(metric, v)}
       </span>
     </p>
   )
@@ -76,6 +76,28 @@ export function PostGrid({ posts, conta, metric }: { posts: Media[]; conta: stri
       </ul>
       {open && <PostPanel key={open.id} post={open} conta={conta} onClose={() => setOpen(null)} />}
     </>
+  )
+}
+
+function Tile({ label, value, metric, compact = false }: { label: string; value: Num; metric: string; compact?: boolean }) {
+  return (
+    <div className="rounded-xl border border-line p-3">
+      <dt className="text-[11px] uppercase tracking-[0.04em] text-muted [overflow-wrap:anywhere] sm:text-xs sm:tracking-[0.08em]">{label}</dt>
+      <dd className="mt-1">
+        {value === null ? (
+          <>
+            <span className="num text-2xl text-muted" title={UNAVAILABLE}>
+              —
+            </span>
+            <span className="block text-xs text-muted">Indisponível</span>
+          </>
+        ) : (
+          <span className={`num font-medium ${compact ? 'text-xl' : 'text-2xl'}`} title={fmtMetricFull(metric, value)}>
+            {fmtMetric(metric, value)}
+          </span>
+        )}
+      </dd>
+    </div>
   )
 }
 
@@ -162,7 +184,7 @@ function PostPanel({ post, conta, onClose }: { post: Media; conta: string; onClo
                   const v = data[k]
                   return (
                     <div key={k} className="rounded-xl border border-line p-3">
-                      <dt className="text-xs uppercase tracking-[0.08em] text-muted">{LABEL[k]}</dt>
+                      <dt className="text-[11px] uppercase tracking-[0.04em] text-muted [overflow-wrap:anywhere] sm:text-xs sm:tracking-[0.08em]">{LABEL[k]}</dt>
                       <dd className="mt-1">
                         {v === null ? (
                           <>
@@ -182,6 +204,39 @@ function PostPanel({ post, conta, onClose }: { post: Media; conta: string; onClo
                 })}
               </dl>
               {missing.length > 0 && <p className="text-xs text-muted">{WHY_DEFAULT} Isso é normal em alguns tipos de post.</p>}
+
+              {post.media_product_type === 'REELS' && (
+                <section aria-labelledby="ret" className="space-y-2">
+                  <h3 id="ret" className="font-display font-bold tracking-tight">
+                    Retenção
+                  </h3>
+                  <dl className="grid grid-cols-2 gap-3">
+                    <Tile label="Tempo médio assistido" value={data.avg_watch_time} metric="avg_watch_time" compact />
+                    <Tile label="Tempo total assistido" value={data.total_watch_time} metric="total_watch_time" compact />
+                  </dl>
+                  <p className="text-xs text-muted">
+                    Tempo médio que cada reprodução ficou na tela. O Instagram não informa a duração do vídeo, então não há percentual assistido.
+                  </p>
+                </section>
+              )}
+
+              <section aria-labelledby="taxas" className="space-y-2">
+                <h3 id="taxas" className="font-display font-bold tracking-tight">
+                  Taxas sobre o alcance
+                </h3>
+                <dl className="grid grid-cols-1 gap-3 min-[460px]:grid-cols-3">
+                  {RATE_HELP.map((r) => (
+                    <Tile key={r.key} label={r.label} value={data[r.key]} metric={r.key} compact />
+                  ))}
+                </dl>
+                <ul className="space-y-1 text-xs text-muted">
+                  {RATE_HELP.map((r) => (
+                    <li key={r.key}>
+                      <b className="font-medium text-ink">{r.label}:</b> {r.help}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             </>
           )}
 

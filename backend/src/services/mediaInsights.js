@@ -23,13 +23,34 @@ const METRICS = [
   "saved",
   "total_interactions",
 ];
+// Só para reels (a API recusa em outros tipos). Unidade: milissegundos. A API não expõe a duração
+// do vídeo, então não há como calcular percentual assistido.
+const REEL_METRICS = ["ig_reels_avg_watch_time", "ig_reels_video_view_total_time"];
+const OUT_KEY = { ig_reels_avg_watch_time: "avg_watch_time", ig_reels_video_view_total_time: "total_watch_time" };
+const API_NAME = Object.fromEntries(Object.entries(OUT_KEY).map(([a, o]) => [o, a]));
+const outKey = (m) => OUT_KEY[m] ?? m;
+const OUT_KEYS = [...METRICS, ...REEL_METRICS].map(outKey);
+const isReelPost = (p) => p.media_product_type === "REELS";
 // nome da métrica -> campo do modelo Prisma
 const FIELD = { total_interactions: "totalInteractions" };
 const field = (m) => FIELD[m] ?? m;
 
-// Insights de um post; degrada métricas não suportadas (valores ausentes = null)
-async function mediaInsights(mediaId, token) {
-  const allMetrics = METRICS;
+// taxas como fração do alcance (0,114); alcance 0 ou null => null
+const rate = (n, reach) =>
+  n == null || reach == null || reach === 0 ? null : Math.round((n / reach) * 10000) / 10000;
+function withRates(m) {
+  return {
+    ...m,
+    taxa_interacao: rate(m.total_interactions, m.reach),
+    taxa_compartilhamento: rate(m.shares, m.reach),
+    taxa_salvamento: rate(m.saved, m.reach),
+  };
+}
+
+// Insights de um post; degrada métricas não suportadas (valores ausentes = null).
+// reel=true também pede o tempo de visualização; para os outros tipos devolve null, sem chamar.
+async function mediaInsights(mediaId, token, { reel = false } = {}) {
+  const allMetrics = reel ? [...METRICS, ...REEL_METRICS] : METRICS;
   let metrics = allMetrics;
   const unsupported = [];
 
@@ -56,13 +77,26 @@ async function mediaInsights(mediaId, token) {
   }
 
   const normalized = {};
-  allMetrics.forEach((m) => (normalized[m] = null));
+  OUT_KEYS.forEach((k) => (normalized[k] = null));
   data.data.forEach((item) => {
-    normalized[item.name] = item.values?.[0]?.value ?? null;
+    normalized[outKey(item.name)] = item.values?.[0]?.value ?? null;
   });
-  dropNegatives(normalized, allMetrics, unsupported);
+  const neg = [];
+  dropNegatives(normalized, OUT_KEYS, neg);
+  unsupported.push(...neg.map((k) => API_NAME[k] ?? k));
 
   return { ...normalized, unsupported_metrics: unsupported };
+}
+
+// Tipo do post sem custo extra quando já está no cache; senão 1 chamada leve (cacheada em memória).
+async function isReelById(account, mediaId) {
+  const row = await prisma.mediaInsight.findUnique({
+    where: { alias_mediaId: { alias: account.alias, mediaId } },
+    select: { mediaProductType: true },
+  });
+  if (row?.mediaProductType) return row.mediaProductType === "REELS";
+  const m = await igGet(mediaId, { fields: "media_product_type" }, account.token);
+  return m.media_product_type === "REELS";
 }
 
 // ---------- cache ----------
@@ -85,7 +119,7 @@ function refreshOne(account, post) {
     p = (async () => {
       let ins;
       try {
-        ins = await mediaInsights(post.id, account.token);
+        ins = await mediaInsights(post.id, account.token, { reel: isReelPost(post) });
       } catch (e) {
         // erro 100 sem métrica aproveitável = o post não tem insights: guarda tudo null
         // (respeita o TTL em vez de reconsultar a cada carregamento). Outros erros: propaga.
@@ -99,6 +133,10 @@ function refreshOne(account, post) {
         fetchedAt: new Date(),
       };
       for (const m of METRICS) data[field(m)] = ins[m] ?? null;
+      data.avgWatchTimeMs = ins.avg_watch_time ?? null;
+      data.totalWatchTimeMs = ins.total_watch_time ?? null;
+      // marca que o tempo de visualização já foi buscado (null = nunca; só vale para reels)
+      data.retentionFetchedAt = isReelPost(post) ? new Date() : null;
       await prisma.mediaInsight.upsert({
         where: { alias_mediaId: { alias: account.alias, mediaId: post.id } },
         create: { alias: account.alias, mediaId: post.id, ...data },
@@ -138,7 +176,10 @@ async function refreshMany(account, posts, budgetMs) {
 }
 
 const isStale = (row, post, now) =>
-  !row || now - row.fetchedAt.getTime() > ttlFor(new Date(post.timestamp), now);
+  !row ||
+  now - row.fetchedAt.getTime() > ttlFor(new Date(post.timestamp), now) ||
+  // reel em cache sem o tempo de visualização (linha anterior à migração): busca de novo
+  (isReelPost(post) && !row.retentionFetchedAt);
 
 // Devolve cada post com as métricas em cache (null = indisponível) e fetched_at.
 // refresh=false só lê o cache. `pending` = posts que ainda estão sendo atualizados.
@@ -166,12 +207,21 @@ async function withMetrics(account, posts, { refresh = true, budgetMs = DEFAULT_
     const r = rows.get(p.id);
     const m = {};
     for (const k of METRICS) m[k] = r ? r[field(k)] : null;
-    return { ...p, ...m, fetched_at: r ? r.fetchedAt.toISOString() : null };
+    m.avg_watch_time = r ? r.avgWatchTimeMs : null;
+    m.total_watch_time = r?.totalWatchTimeMs == null ? null : Number(r.totalWatchTimeMs);
+    return { ...p, ...withRates(m), fetched_at: r ? r.fetchedAt.toISOString() : null };
   });
   return { posts: out, pending };
 }
 
-const SORT_KEYS = ["data", ...METRICS];
+const SORT_KEYS = [
+  "data",
+  ...METRICS,
+  "avg_watch_time",
+  "taxa_interacao",
+  "taxa_compartilhamento",
+  "taxa_salvamento",
+];
 
 // null sempre no fim, nas duas direções; empate: mais recente primeiro
 function sortPosts(posts, key, dir) {
@@ -187,4 +237,4 @@ function sortPosts(posts, key, dir) {
   });
 }
 
-module.exports = { dropNegatives, mediaInsights, withMetrics, sortPosts, SORT_KEYS, METRICS };
+module.exports = { dropNegatives, mediaInsights, isReelById, withRates, withMetrics, sortPosts, SORT_KEYS, METRICS };

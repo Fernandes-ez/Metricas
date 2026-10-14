@@ -47,3 +47,17 @@ export function ago(iso: string): string {
   if (min < 1440) return rtf.format(-Math.round(min / 60), 'hour')
   return rtf.format(-Math.round(min / 1440), 'day')
 }
+
+const dec1 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+/** Milissegundos para "8,4 s", "1 min 12 s" ou "2 h 05 min". */
+export function fmtDuration(ms: number): string {
+  const s = ms / 1000
+  if (s < 60) return `${dec1.format(s)} s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} min ${String(Math.round(s % 60)).padStart(2, '0')} s`
+  return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`
+}
+
+const pctFmt = new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 })
+/** Fração do alcance (0,114) para "11,4%". */
+export const fmtRate = (frac: number) => pctFmt.format(frac)
