@@ -103,16 +103,22 @@ const ADSET_FIELDS =
   "id,name,campaign_id,status,effective_status,daily_budget,lifetime_budget,optimization_goal,destination_type,billing_event,start_time,end_time,created_time";
 const AD_FIELDS = "id,name,adset_id,campaign_id,status,effective_status,created_time,creative{id,name}";
 
+// onlyActive filtra AQUI (não no parâmetro effective_status da Meta, que omitiu anúncio ativo em 30/10/2026)
 async function structure(account, { onlyActive = false } = {}) {
-  const filter = onlyActive ? { effective_status: [...SPENDING] } : {};
   const get = (edge, fields) =>
-    cached(`${account.token}|${edge}|${account.adAccountId}|${onlyActive}`, () =>
-      adsGetAll(`${account.adAccountId}/${edge}`, { fields, limit: 200, ...filter }, account.token),
+    cached(`${account.token}|${edge}|${account.adAccountId}|all`, () =>
+      adsGetAll(`${account.adAccountId}/${edge}`, { fields, limit: 200 }, account.token),
     );
 
-  const [campaigns, adsets, ads] = await guard(account, () =>
+  let [campaigns, adsets, ads] = await guard(account, () =>
     Promise.all([get("campaigns", CAMPAIGN_FIELDS), get("adsets", ADSET_FIELDS), get("ads", AD_FIELDS)]),
   );
+  if (onlyActive) {
+    const live = (x) => SPENDING.has(x.effective_status);
+    campaigns = campaigns.filter(live);
+    adsets = adsets.filter(live);
+    ads = ads.filter(live);
+  }
 
   const adsBySet = new Map();
   for (const a of ads) {
