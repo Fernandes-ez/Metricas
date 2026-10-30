@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "refresh-tokens": "node --env-file-if-exists=.env src/jobs/refreshTokens.js",
-    "import-accounts": "node --env-file-if-exists=.env scripts/import-env-accounts.mjs"
+    "import-accounts": "node --env-file-if-exists=.env scripts/import-env-accounts.mjs",
+    "ads": "node --env-file-if-exists=.env scripts/ads-admin.mjs"
   },
   "keywords": [],
   "author": "",

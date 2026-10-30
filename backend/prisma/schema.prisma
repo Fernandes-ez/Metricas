@@ -47,3 +47,53 @@ model MediaInsight {
   @@index([alias, postedAt])
   @@map("media_insights")
 }
+
+// ---------- Anúncios (Marketing API) ----------
+
+// Token de usuário do sistema de um portfólio empresarial (não expira). Um token serve várias contas.
+model AdToken {
+  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label     String      @unique // ex.: EZF_TECH
+  tokenEnc  String      @map("token_enc")
+  status    String      @default("active") // 'active' | 'invalid'
+  lastError String?     @map("last_error")
+  checkedAt DateTime?   @map("checked_at") @db.Timestamptz(6)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  accounts  AdAccount[]
+
+  @@map("ad_tokens")
+}
+
+// Conta de anúncios ligada a um perfil do Metricas (alias = AQUA, EZF, PUKA, TABUA...).
+// monthlyCap null = sem teto definido: só leitura (escrita, na Fase 2, fica bloqueada).
+model AdAccount {
+  adAccountId String   @id @map("ad_account_id") // "act_123..."
+  alias       String
+  tokenId     String   @map("token_id") @db.Uuid
+  token       AdToken  @relation(fields: [tokenId], references: [id])
+  name        String?
+  currency    String?
+  timezone    String?
+  monthlyCap  Decimal? @map("monthly_cap") @db.Decimal(12, 2)
+  status      String   @default("active") // 'active' | 'error'
+  lastError   String?  @map("last_error")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([alias])
+  @@map("ad_accounts")
+}
+
+// Cache das respostas de insights de anúncios (ver src/services/adsService.js).
+model AdInsightCache {
+  cacheKey    String   @id @map("cache_key")
+  adAccountId String   @map("ad_account_id")
+  payload     Json
+  fetchedAt   DateTime @map("fetched_at") @db.Timestamptz(6)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([adAccountId])
+  @@index([expiresAt])
+  @@map("ad_insight_cache")
+}

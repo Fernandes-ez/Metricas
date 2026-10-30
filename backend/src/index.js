@@ -6,6 +6,8 @@ require("dotenv").config();
 const { analyzeMetrics } = require("./services/geminiService");
 const { getPageInsights } = require("./services/metaService");
 const instagramRoutes = require("./routes/instagramRoutes");
+const adsRoutes = require("./routes/adsRoutes");
+const { pruneInsightCache } = require("./services/adsService");
 const cron = require("node-cron");
 const prisma = require("./services/db");
 const { refreshTokens } = require("./jobs/refreshTokens");
@@ -16,6 +18,9 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(bodyParser.json());
+
+// Anúncios (Marketing API) — montado antes das rotas do Instagram, que usam o middleware de cache delas
+app.use("/api", adsRoutes);
 
 // Novas rotas de Insights
 app.use("/api", instagramRoutes);
@@ -98,6 +103,11 @@ cron.schedule("17 3 * * *", () => refreshTokens().catch(console.error), {
 
 // aquece o cache de insights dos posts (horário diferente do refresh de tokens)
 cron.schedule("7 4 * * *", () => warmMediaInsights().catch(console.error), {
+  timezone: "America/Sao_Paulo",
+});
+
+// limpa o cache de insights de anúncios vencido há mais de 7 dias
+cron.schedule("37 4 * * *", () => pruneInsightCache().catch(console.error), {
   timezone: "America/Sao_Paulo",
 });
 

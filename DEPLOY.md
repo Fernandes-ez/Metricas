@@ -135,3 +135,42 @@ docker compose --env-file backend/.env -f docker-compose.yml -f docker-compose.b
 - Cache de insights por post (tabela `media_insights`): o painel e o MCP ordenam posts por métrica sem repetir chamadas à Graph API. Posts com até 7 dias renovam a cada 1 h; mais antigos, a cada 24 h. Um job diário às 04:07 (São Paulo) aquece os últimos 30 posts de cada conta; o refresh de tokens continua às 03:17.
 - Retenção dos reels: `avg_watch_time` e `total_watch_time` (em milissegundos, só reels) entram no mesmo cache. Reels que já estavam em cache sem esses valores são rebuscados na primeira consulta depois da atualização (1 chamada por reel); as taxas (`taxa_interacao`, `taxa_compartilhamento`, `taxa_salvamento`) são calculadas na hora, como fração do alcance.
 - Memória (`mem_limit`): db 256 MB, backend 192 MB, mcp 160 MB, frontend 256 MB, caddy 64 MB.
+
+## 8. Anúncios (Meta Ads / Marketing API) — somente leitura
+
+Pré-requisitos no Meta: casos de uso de anúncios no app Metricas; usuário do sistema (Admin) no portfólio da
+EZF Tech com o app e as contas de anúncios atribuídas (as de outros portfólios chegam por acesso de parceiro);
+token gerado com `ads_read`, `ads_management`, `business_management`, validade "nunca".
+
+1. Depois de `docker compose pull && docker compose up -d`, a migração `ads` cria `ad_tokens`, `ad_accounts`
+   e `ad_insight_cache`.
+2. Cadastre o token (a digitação não aparece; cole e tecle Enter). O script valida o token e lista as contas
+   de anúncios que ele enxerga:
+   ```
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- token EZF_TECH
+   ```
+3. Ligue cada conta ao perfil (o último argumento é o teto mensal; sem ele a conta fica só leitura):
+   ```
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta AQUA  act_1031390936714177 EZF_TECH 1500
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta EZF   act_1147705161535222 EZF_TECH
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta PUKA  act_1610177367248625 EZF_TECH
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta TABUA act_1751586315916316 EZF_TECH
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- listar
+   ```
+   Para definir/trocar o teto depois: repita `conta` com o valor (ou `sem` para remover).
+4. Teste (dentro da VM):
+   ```
+   curl -s http://127.0.0.1:3001/api/ads/accounts
+   curl -s "http://127.0.0.1:3001/api/ads/AQUA/campaigns?status=ativas"
+   curl -s "http://127.0.0.1:3001/api/ads/AQUA/insights?nivel=campanha&periodo=30d"
+   ```
+5. No claude.ai, reconecte o conector (ou abra uma conversa nova) para aparecerem as ferramentas
+   `listar_contas_anuncio`, `campanhas_anuncio` e `insights_anuncios`.
+
+Rotas: `GET /api/ads/accounts`, `GET /api/ads/:apelido/campaigns?status=todas|ativas`,
+`GET /api/ads/:apelido/insights?nivel=conta|campanha|conjunto|anuncio&periodo=hoje|7d|14d|30d|mes_atual|mes_passado`
+(ou `desde`/`ate` em YYYY-MM-DD). Orçamentos já saem em reais; `conversas_iniciadas` = ação
+`onsite_conversion.messaging_conversation_started_7d`. Cache de insights no Postgres: 15 min para períodos que
+incluem hoje, 3 h para fechados; limpeza diária às 04:37. Token revogado → o backend marca `invalid` e as
+rotas respondem 409 até você rodar `npm run ads -- token EZF_TECH` de novo. Variáveis opcionais no
+`backend/.env`: `META_GRAPH_VERSION` (padrão `v26.0`) e `META_APP_SECRET` (só se o app exigir App Secret Proof).

@@ -25,15 +25,15 @@ const clean = (v) =>
       ? Object.fromEntries(Object.entries(v).filter(([k]) => !BAD.has(k)).map(([k, x]) => [k, clean(x)]))
       : v;
 
-async function get(path, { stripIds = false, map } = {}) {
+async function get(path, { stripIds = false, map, timeoutMs = 10_000, on409 } = {}) {
   let r;
   try {
-    r = await fetch(BACKEND + path, { signal: AbortSignal.timeout(10_000) });
+    r = await fetch(BACKEND + path, { signal: AbortSignal.timeout(timeoutMs) });
   } catch {
-    return reply('Backend indisponível ou demorou mais de 10 s.', true);
+    return reply(`Backend indisponível ou demorou mais de ${timeoutMs / 1000} s.`, true);
   }
   const body = await r.json().catch(() => null);
-  if (r.status === 409) return reply('Conta precisa ser reconectada (needs_reauth). Reconecte a conta no Instagram.', true);
+  if (r.status === 409) return reply(on409 ? body?.error ?? on409 : 'Conta precisa ser reconectada (needs_reauth). Reconecte a conta no Instagram.', true);
   if (!r.ok) return reply(`Backend respondeu ${r.status}: ${body?.error ?? 'erro desconhecido'}`, true);
   const out = stripIds ? clean(body) : body;
   return reply(map ? map(out, r.headers) : out); // unsupported_metrics, quando existir, segue no corpo
@@ -64,6 +64,12 @@ const SORT = [
 ];
 
 const ro = { readOnlyHint: true, openWorldHint: true };
+
+// anúncios: a Marketing API é mais lenta e pode paginar; ids de campanha/conjunto/anúncio são necessários (sem stripIds)
+const ADS = { timeoutMs: 30_000, on409: 'Token de anúncios inválido; gere outro no usuário do sistema.' };
+const NIVEIS = ['conta', 'campanha', 'conjunto', 'anuncio'];
+const PERIODOS = ['hoje', '7d', '14d', '30d', 'mes_atual', 'mes_passado'];
+const dia = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export function buildServer() {
   const s = new McpServer({ name: 'metricas-instagram', version: '1.0.0' });
@@ -132,6 +138,52 @@ export function buildServer() {
       annotations: ro,
     },
     ({ id, conta }) => get(`/api/media/${id}/insights?account=${encodeURIComponent(conta)}`),
+  );
+
+  // ---------- Anúncios (Meta Ads, somente leitura) ----------
+
+  s.registerTool(
+    'listar_contas_anuncio',
+    {
+      description:
+        'Lista as contas de anúncios Meta Ads cadastradas por perfil (apelido): ad_account_id (act_...), nome, moeda, status da conta, teto_mensal (null = sem teto, só leitura), gasto_mes (gasto no mês corrente, na moeda da conta) e uso_teto (fração do teto já gasta: 0,42 = 42%). Se aparecer "erro", aquela conta não pôde ser lida (token, permissão ou limite de chamadas).',
+      annotations: ro,
+    },
+    () => get('/api/ads/accounts', ADS),
+  );
+
+  s.registerTool(
+    'campanhas_anuncio',
+    {
+      description:
+        'Estrutura das campanhas Meta Ads do perfil: campanhas > conjuntos > anúncios, com id, nome, objetivo, status (configurado) e status_efetivo (o que de fato está acontecendo: ACTIVE, PAUSED, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES, PENDING_REVIEW, DISAPPROVED...), orçamentos JÁ EM REAIS (moeda da conta, não centavos), otimização e destino. Inclui o orçamento comprometido: orcamento_diario_ativo (soma do que está gastando), projecao_mensal (× 30,44), teto_mensal e folga_mensal. Use para saber o que está rodando e quanto está comprometido; para resultados (gasto, conversas, custo), use insights_anuncios.',
+      inputSchema: {
+        apelido: alias,
+        status: z.enum(['todas', 'ativas']).default('todas').describe('todas = inclui pausadas (sem excluídas/arquivadas); ativas = só o que está gastando ou em análise'),
+      },
+      annotations: ro,
+    },
+    ({ apelido, status }) => get(`/api/ads/${encodeURIComponent(apelido)}/campaigns?status=${status}`, ADS),
+  );
+
+  s.registerTool(
+    'insights_anuncios',
+    {
+      description:
+        'Resultados Meta Ads do perfil no período, por nível (conta, campanha, conjunto ou anúncio), ordenados por gasto: gasto (na moeda da conta), impressões, alcance, frequência, cliques_link, ctr_pct (em %, 1,8 = 1,8%), cpm, conversas_iniciadas (conversas no WhatsApp/Direct/Messenger iniciadas pelo anúncio, janela de 7 dias), novos_contatos_mensagem, leads (formulário), visualizacoes_video, custo_por_conversa e custo_por_lead (null quando o denominador é 0). "totais" soma o período (alcance e frequência não são somáveis e ficam de fora; peça nivel=conta para tê-los). Períodos 7d/14d/30d NÃO incluem hoje (padrão do Gerenciador); hoje e mes_atual incluem. Alternativa: desde e ate (YYYY-MM-DD, fuso da conta). Linha só aparece se teve entrega no período. cache=HIT indica dado em cache (15 min para períodos que incluem hoje, 3 h para fechados).',
+      inputSchema: {
+        apelido: alias,
+        nivel: z.enum(NIVEIS).default('campanha').describe('conta, campanha (padrão), conjunto ou anuncio'),
+        periodo: z.enum(PERIODOS).default('30d').describe('Ignorado se desde/ate forem informados'),
+        desde: dia.optional().describe('Início (YYYY-MM-DD); exige ate'),
+        ate: dia.optional().describe('Fim inclusivo (YYYY-MM-DD); exige desde'),
+      },
+      annotations: ro,
+    },
+    ({ apelido, nivel, periodo, desde, ate }) => {
+      const q = desde || ate ? `desde=${desde ?? ''}&ate=${ate ?? ''}` : `periodo=${periodo}`;
+      return get(`/api/ads/${encodeURIComponent(apelido)}/insights?nivel=${nivel}&${q}`, ADS);
+    },
   );
 
   return s;
