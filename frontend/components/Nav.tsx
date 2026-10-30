@@ -2,18 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { Suspense } from 'react'
 
 const ITEMS = [
   { href: '/', label: 'Instagram', match: (p: string) => p === '/' || p.startsWith('/contas') },
   { href: '/anuncios', label: 'Anúncios', match: (p: string) => p.startsWith('/anuncios') },
 ]
 
-export function Nav() {
-  const path = usePathname() ?? '/'
+function Links({ path }: { path: string | null }) {
   return (
     <nav aria-label="Seções" className="flex items-center gap-1">
       {ITEMS.map((i) => {
-        const on = i.match(path)
+        const on = path !== null && i.match(path)
         return (
           <Link
             key={i.href}
@@ -26,5 +26,18 @@ export function Nav() {
         )
       })}
     </nav>
+  )
+}
+
+function Active() {
+  return <Links path={usePathname() ?? '/'} />
+}
+
+/** usePathname só existe em tempo de execução: o Suspense deixa a página pré-renderizar com o menu sem destaque. */
+export function Nav() {
+  return (
+    <Suspense fallback={<Links path={null} />}>
+      <Active />
+    </Suspense>
   )
 }
