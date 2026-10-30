@@ -195,3 +195,19 @@ curl -s -X POST http://127.0.0.1:3001/api/ads/AQUA/budget -H 'content-type: appl
 ```
 Ferramentas MCP: `alterar_status`, `alterar_orcamento` (marcadas como escrita: o claude.ai pede confirmação)
 e `historico_alteracoes`. Depois do deploy, desconecte e reconecte o conector para o claude.ai reler a lista.
+
+### 8.2 Criação (Fase 3a): anúncio a partir de post do Instagram
+
+`POST /api/ads/:apelido/ads` — `{ "conjunto_id": "...", "post_id": "<id do post do IG>", "nome": "...", "simular": true }`
+(MCP: `criar_anuncio_de_post`). Cria um anúncio **PAUSADO** num conjunto existente com destino WhatsApp, botão
+"Enviar mensagem" (`WHATSAPP_MESSAGE` + `link: https://api.whatsapp.com/send`).
+
+- `metodo: "post_existente"` (padrão): usa o próprio post (`source_instagram_media_id`), herda o engajamento.
+- `metodo: "upload"`: **só com autorização do usuário**. Envia o vídeo do post (`media_url`) para `act_.../advideos`,
+  espera processar (até ~90 s) e cria o criativo com ele. Não herda engajamento. Se o vídeo ainda estiver
+  processando, a resposta traz o `video_id` para reaproveitar.
+- Se o método falhar, **nada é criado** (HTTP 422 com o erro exato da Meta). O backend nunca troca de método sozinho.
+- Página do Facebook: a do criativo de um anúncio do próprio conjunto; senão a única de `promote_pages`; senão `pagina_id`.
+- Pré-requisitos na Meta: página do Facebook e conta do Instagram do perfil atribuídas ao usuário do sistema
+  (Instagram autorizado na conta de anúncios) e WhatsApp vinculado à página.
+- Para veicular: `alterar_status` no anúncio (passa pela trava do teto).

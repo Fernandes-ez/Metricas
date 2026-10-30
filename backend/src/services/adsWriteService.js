@@ -222,4 +222,4 @@ async function listChanges(adAccountIds, limit = 20) {
   }));
 }
 
-module.exports = { applyChange, listChanges, WriteError };
+module.exports = { applyChange, listChanges, WriteError, withLock, log };

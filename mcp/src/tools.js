@@ -40,17 +40,17 @@ async function get(path, { stripIds = false, map, timeoutMs = 10_000, on409 } = 
 }
 
 // escrita (anúncios): POST JSON; erros 4xx do backend voltam com a explicação (ex.: trava do teto)
-async function post(path, payload) {
+async function post(path, payload, timeoutMs = 45_000) {
   let r;
   try {
     r = await fetch(BACKEND + path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...payload, origem: 'mcp' }),
-      signal: AbortSignal.timeout(45_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
-    return reply('Backend indisponível ou demorou mais de 45 s. A alteração pode ou não ter sido aplicada: confira com historico_alteracoes antes de repetir.', true);
+    return reply(`Backend indisponível ou demorou mais de ${timeoutMs / 1000} s. A alteração pode ou não ter sido aplicada: confira com historico_alteracoes e campanhas_anuncio antes de repetir.`, true);
   }
   const body = await r.json().catch(() => null);
   if (!r.ok) return reply({ status: r.status, erro: body?.error ?? 'erro desconhecido', ...(body?.detalhe ? { detalhe: body.detalhe } : {}) }, true);
@@ -248,6 +248,27 @@ export function buildServer() {
       annotations: rw,
     },
     ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/budget`, body),
+  );
+
+  s.registerTool(
+    'criar_anuncio_de_post',
+    {
+      description:
+        'Cria um anúncio NOVO, sempre PAUSADO, dentro de um conjunto que já existe (destino WhatsApp), a partir de um post do Instagram do próprio perfil (post_id vem de midias_conta; conjunto_id de campanhas_anuncio). Usa o botão "Enviar mensagem" no WhatsApp e a mesma página dos anúncios do conjunto. metodo="post_existente" (padrão) usa o próprio post e herda curtidas/comentários. Se a Meta recusar, NADA é criado e volta o erro exato da Meta: mostre esse erro ao usuário e PERGUNTE se ele quer tentar metodo="upload" (sobe o vídeo do post como anúncio novo, SEM herdar engajamento; só para vídeo/Reel). NUNCA troque para upload sem o usuário autorizar. Use simular=true para conferir conjunto, post e página antes. Para veicular depois, ative o anúncio com alterar_status (passa pela trava do teto). Confirme com o usuário o conjunto e o post antes de criar.',
+      inputSchema: {
+        apelido: alias,
+        conjunto_id: objId,
+        post_id: z.string().regex(/^\d{5,30}$/).describe('Id do post do Instagram (midias_conta)'),
+        nome: z.string().min(1).max(200).optional().describe('Nome do anúncio (ex.: "Anúncio 2 — Hidroginástica Prof. Natália")'),
+        metodo: z.enum(['post_existente', 'upload']).default('post_existente').describe('upload só com autorização explícita do usuário'),
+        pagina_id: z.string().regex(/^\d{5,30}$/).optional().describe('Só se o servidor pedir (não achou a página sozinho)'),
+        video_id: z.string().regex(/^\d{5,30}$/).optional().describe('Só no upload, para reaproveitar um vídeo já enviado que ainda estava processando'),
+        simular,
+        ad_account_id: actId,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/ads`, body, 150_000),
   );
 
   s.registerTool(

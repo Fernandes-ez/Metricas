@@ -4,6 +4,7 @@ const router = express.Router();
 const { listAdAccounts } = require("../services/adsRepository");
 const { PRESETS, LEVELS, accountSummary, structure, insights, todaySP } = require("../services/adsService");
 const { applyChange, listChanges, WriteError } = require("../services/adsWriteService");
+const { createAdFromPost } = require("../services/adsCreateService");
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -146,6 +147,34 @@ router.post("/ads/:apelido/status", (req, res) => write(req, res, "status", req.
 router.post("/ads/:apelido/budget", (req, res) =>
   write(req, res, "daily_budget", typeof req.body?.orcamento_diario === "string" ? Number(req.body.orcamento_diario.replace(",", ".")) : req.body?.orcamento_diario),
 );
+
+// g) Criar anúncio (PAUSADO) num conjunto existente a partir de um post do Instagram do perfil.
+//    { conjunto_id, post_id, nome?, metodo?: post_existente (padrão) | upload, pagina_id?, video_id?, simular?, origem? }
+//    Se o método falhar, nada é criado e o erro volta (422) — o método nunca é trocado sozinho.
+router.post("/ads/:apelido/ads", async (req, res) => {
+  try {
+    const loaded = await loadAccounts(req.params.apelido, res);
+    if (!loaded) return;
+    const account = pickAccount(loaded.accounts, req.body?.ad_account_id);
+    if (!account)
+      return res.status(400).json({ error: "Perfil com mais de uma conta de anúncios: informe ad_account_id" });
+    const b = req.body || {};
+    res.json(
+      await createAdFromPost(account, {
+        conjunto_id: b.conjunto_id,
+        post_id: b.post_id,
+        nome: typeof b.nome === "string" ? b.nome.trim() : undefined,
+        metodo: b.metodo,
+        pagina_id: b.pagina_id,
+        video_id: b.video_id,
+        simular: b.simular === true,
+        origem: ["mcp", "painel", "script"].includes(b.origem) ? b.origem : "api",
+      }),
+    );
+  } catch (error) {
+    sendError(res, error);
+  }
+});
 
 // f) Histórico de alterações do perfil (?limite=20, máx. 100)
 router.get("/ads/:apelido/changes", async (req, res) => {
