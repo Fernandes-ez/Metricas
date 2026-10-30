@@ -151,7 +151,7 @@ token gerado com `ads_read`, `ads_management`, `business_management`, validade "
    ```
 3. Ligue cada conta ao perfil (o último argumento é o teto mensal; sem ele a conta fica só leitura):
    ```
-   docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta AQUA  act_1031390936714177 EZF_TECH 1500
+   docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta AQUA  act_1605155187264697 EZF_TECH 1500
    docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta EZF   act_1147705161535222 EZF_TECH
    docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta PUKA  act_1610177367248625 EZF_TECH
    docker compose exec backend ./docker-entrypoint.sh npm run ads -- conta TABUA act_1751586315916316 EZF_TECH
@@ -174,3 +174,24 @@ Rotas: `GET /api/ads/accounts`, `GET /api/ads/:apelido/campaigns?status=todas|at
 incluem hoje, 3 h para fechados; limpeza diária às 04:37. Token revogado → o backend marca `invalid` e as
 rotas respondem 409 até você rodar `npm run ads -- token EZF_TECH` de novo. Variáveis opcionais no
 `backend/.env`: `META_GRAPH_VERSION` (padrão `v26.0`) e `META_APP_SECRET` (só se o app exigir App Secret Proof).
+
+### 8.1 Escrita (Fase 2): pausar/ativar e orçamento diário
+
+Rotas (JSON no corpo; `simular: true` mostra o efeito sem alterar nada):
+- `POST /api/ads/:apelido/status` — `{ "tipo": "campanha|conjunto|anuncio", "id": "...", "status": "ACTIVE|PAUSED" }`
+- `POST /api/ads/:apelido/budget` — `{ "tipo": "campanha|conjunto", "id": "...", "orcamento_diario": 10 }` (reais)
+- `GET /api/ads/:apelido/changes?limite=20` — histórico (tabela `ad_change_log`)
+
+**Trava do teto (no backend):** pausar e diminuir sempre passam. Ativar ou aumentar exige teto na conta
+(`npm run ads -- conta <APELIDO> <act_ID> EZF_TECH <teto>`) e é recusado (HTTP 422, com a conta feita) se
+`gasto do mês + orçamento diário comprometido depois × dias restantes` ou `comprometido depois × 30,44` passar do teto.
+O comprometido é recalculado na hora (sem cache): campanha + conjunto ativos com ao menos um anúncio ativo.
+Uma escrita por conta de cada vez. Toda tentativa (ok, bloqueada, erro) vai para `ad_change_log`.
+
+Teste seguro (só simula):
+```
+curl -s -X POST http://127.0.0.1:3001/api/ads/AQUA/budget -H 'content-type: application/json' \
+  -d '{"tipo":"campanha","id":"23860904830090792","orcamento_diario":10,"simular":true}'; echo
+```
+Ferramentas MCP: `alterar_status`, `alterar_orcamento` (marcadas como escrita: o claude.ai pede confirmação)
+e `historico_alteracoes`. Depois do deploy, desconecte e reconecte o conector para o claude.ai reler a lista.

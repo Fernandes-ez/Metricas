@@ -39,6 +39,24 @@ async function get(path, { stripIds = false, map, timeoutMs = 10_000, on409 } = 
   return reply(map ? map(out, r.headers) : out); // unsupported_metrics, quando existir, segue no corpo
 }
 
+// escrita (anúncios): POST JSON; erros 4xx do backend voltam com a explicação (ex.: trava do teto)
+async function post(path, payload) {
+  let r;
+  try {
+    r = await fetch(BACKEND + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...payload, origem: 'mcp' }),
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch {
+    return reply('Backend indisponível ou demorou mais de 45 s. A alteração pode ou não ter sido aplicada: confira com historico_alteracoes antes de repetir.', true);
+  }
+  const body = await r.json().catch(() => null);
+  if (!r.ok) return reply({ status: r.status, erro: body?.error ?? 'erro desconhecido', ...(body?.detalhe ? { detalhe: body.detalhe } : {}) }, true);
+  return reply(body);
+}
+
 const CAPTION_MAX = 150;
 // só o que ajuda a escolher um post: sem URLs de mídia (expiram e pesam), legenda curta (≤150, contando a reticência)
 const slim = (posts) =>
@@ -70,6 +88,11 @@ const ADS = { timeoutMs: 30_000, on409: 'Token de anúncios inválido; gere outr
 const NIVEIS = ['conta', 'campanha', 'conjunto', 'anuncio'];
 const PERIODOS = ['hoje', '7d', '14d', '30d', 'mes_atual', 'mes_passado'];
 const dia = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const objId = z.string().regex(/^\d{5,30}$/).describe('Id do objeto (campanha, conjunto ou anúncio), obtido em campanhas_anuncio');
+const actId = z.string().regex(/^act_\d{5,25}$/).optional().describe('Só se o perfil tiver mais de uma conta de anúncios');
+const simular = z.boolean().default(false).describe('true = só mostra o efeito (orçamento antes/depois, trava do teto) sem alterar nada');
+// escrita: mexe em dinheiro real; idempotente (repetir o mesmo valor não muda nada)
+const rw = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true };
 
 export function buildServer() {
   const s = new McpServer({ name: 'metricas-instagram', version: '1.0.0' });
@@ -156,7 +179,7 @@ export function buildServer() {
     'campanhas_anuncio',
     {
       description:
-        'Estrutura das campanhas Meta Ads do perfil: campanhas > conjuntos > anúncios, com id, nome, objetivo, status (configurado) e status_efetivo (o que de fato está acontecendo: ACTIVE, PAUSED, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES, PENDING_REVIEW, DISAPPROVED...), orçamentos JÁ EM REAIS (moeda da conta, não centavos), otimização e destino. Inclui o orçamento comprometido: orcamento_diario_ativo (soma do que está gastando), projecao_mensal (× 30,44), teto_mensal e folga_mensal. Use para saber o que está rodando e quanto está comprometido; para resultados (gasto, conversas, custo), use insights_anuncios.',
+        'Estrutura das campanhas Meta Ads do perfil: campanhas > conjuntos > anúncios, com id, nome, objetivo, status (configurado) e status_efetivo (o que de fato está acontecendo: ACTIVE, PAUSED, CAMPAIGN_PAUSED, ADSET_PAUSED, IN_PROCESS, WITH_ISSUES, PENDING_REVIEW, DISAPPROVED...), orçamentos JÁ EM REAIS (moeda da conta, não centavos), otimização e destino. Inclui o orçamento comprometido: orcamento_diario_ativo (soma do que está de fato entregando: campanha e conjunto ativos com ao menos um anúncio ativo), projecao_mensal (× 30,44), teto_mensal e folga_mensal; campanhas_sem_entrega lista campanhas ligadas que não entregam (sem conjunto ou anúncio ativo) — sinal de anúncio reprovado/pausado ou campanha esquecida. Use para saber o que está rodando e quanto está comprometido; para resultados (gasto, conversas, custo), use insights_anuncios.',
       inputSchema: {
         apelido: alias,
         status: z.enum(['todas', 'ativas']).default('todas').describe('todas = inclui pausadas (sem excluídas/arquivadas); ativas = só o que está gastando ou em análise'),
@@ -184,6 +207,58 @@ export function buildServer() {
       const q = desde || ate ? `desde=${desde ?? ''}&ate=${ate ?? ''}` : `periodo=${periodo}`;
       return get(`/api/ads/${encodeURIComponent(apelido)}/insights?nivel=${nivel}&${q}`, ADS);
     },
+  );
+
+  // ---------- Anúncios: escrita (Fase 2) ----------
+
+  const TRAVA =
+    ' Trava do teto (no servidor, não dá para contornar): pausar e diminuir são sempre permitidos; ATIVAR ou AUMENTAR orçamento exige teto mensal na conta e é recusado se gasto do mês + novo orçamento diário comprometido × dias restantes, ou o novo ritmo × 30,44, passar do teto. Recusa volta como erro com a conta feita: não tente contornar, explique ao usuário. Toda tentativa fica em historico_alteracoes. MEXE EM DINHEIRO REAL: confirme com o usuário o objeto (nome e id) e o valor antes de chamar sem simular; na dúvida, chame primeiro com simular=true.';
+
+  s.registerTool(
+    'alterar_status',
+    {
+      description:
+        'Pausa (PAUSED) ou ativa (ACTIVE) uma campanha, conjunto ou anúncio Meta Ads do perfil. Retorna antes/depois e o orçamento diário comprometido antes/depois. Não exclui nem arquiva nada.' + TRAVA,
+      inputSchema: {
+        apelido: alias,
+        tipo: z.enum(['campanha', 'conjunto', 'anuncio']),
+        id: objId,
+        status: z.enum(['ACTIVE', 'PAUSED']),
+        simular,
+        ad_account_id: actId,
+      },
+      annotations: rw,
+    },
+    ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/status`, body),
+  );
+
+  s.registerTool(
+    'alterar_orcamento',
+    {
+      description:
+        'Altera o orçamento DIÁRIO (em reais, moeda da conta; ex.: 10 ou 12.5) de uma campanha (quando o orçamento está na campanha/CBO) ou de um conjunto (quando está nos conjuntos) — veja orcamento_no em campanhas_anuncio. Orçamento vitalício não é alterado por aqui. Boa prática: aumentos de no máximo ~20% por vez para não reiniciar o aprendizado.' + TRAVA,
+      inputSchema: {
+        apelido: alias,
+        tipo: z.enum(['campanha', 'conjunto']),
+        id: objId,
+        orcamento_diario: z.number().positive().max(100000).describe('Novo orçamento diário em reais'),
+        simular,
+        ad_account_id: actId,
+      },
+      annotations: rw,
+    },
+    ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/budget`, body),
+  );
+
+  s.registerTool(
+    'historico_alteracoes',
+    {
+      description:
+        'Histórico das alterações feitas pelo Metricas nas contas de anúncios do perfil (mais recentes primeiro): quando, origem (mcp/painel), objeto, campo, antes/depois, orçamento comprometido antes/depois e resultado (ok, bloqueado pela trava, erro). Alterações feitas direto no Gerenciador de Anúncios NÃO aparecem aqui.',
+      inputSchema: { apelido: alias, limite: z.number().int().min(1).max(100).default(20) },
+      annotations: ro,
+    },
+    ({ apelido, limite }) => get(`/api/ads/${encodeURIComponent(apelido)}/changes?limite=${limite}`, ADS),
   );
 
   return s;

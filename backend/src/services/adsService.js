@@ -167,14 +167,21 @@ async function structure(account, { onlyActive = false } = {}) {
 }
 
 // Orçamento diário comprometido = campanhas que gastam: orçamento da campanha (CBO, se tiver ao menos
-// um conjunto gastando) ou soma dos conjuntos que gastam. Orçamentos vitalícios ficam de fora.
+// um conjunto gastando) ou soma dos conjuntos que gastam. Conjunto só gasta se tiver ao menos um anúncio
+// gastando. Orçamentos vitalícios ficam de fora. Campanha ligada sem nada entregando vai para "sem_entrega".
 function runRate(campanhas, cap) {
   let daily = 0;
   let hasLifetime = false;
+  const semEntrega = [];
   for (const c of campanhas) {
     if (!SPENDING.has(c.status_efetivo)) continue;
-    const live = c.conjuntos.filter((s) => SPENDING.has(s.status_efetivo));
-    if (!live.length) continue;
+    const live = c.conjuntos.filter(
+      (s) => SPENDING.has(s.status_efetivo) && s.anuncios.some((a) => SPENDING.has(a.status_efetivo)),
+    );
+    if (!live.length) {
+      semEntrega.push({ id: c.id, nome: c.nome, motivo: c.conjuntos.length ? "nenhum anúncio ativo" : "nenhum conjunto ativo" });
+      continue;
+    }
     if (c.orcamento_diario) daily += c.orcamento_diario;
     else if (c.orcamento_total) hasLifetime = true;
     else
@@ -189,6 +196,7 @@ function runRate(campanhas, cap) {
     projecao_mensal: round2(monthly),
     teto_mensal: cap,
     folga_mensal: cap ? round2(cap - monthly) : null,
+    campanhas_sem_entrega: semEntrega,
     aviso_orcamento: hasLifetime ? "Há orçamentos vitalícios ativos; eles não entram na projeção." : undefined,
   };
 }
@@ -280,13 +288,16 @@ function ttlMs({ preset, until }) {
 }
 
 // level: account|campaign|adset|ad; preset (date_preset) OU since+until (YYYY-MM-DD)
-async function insights(account, { level, preset, since, until }) {
+// force = ignora o cache (usado pela trava do teto, que precisa do gasto real do mês)
+async function insights(account, { level, preset, since, until, force = false }) {
   const period = preset ? preset : `${since}..${until}`;
   const key = `${account.adAccountId}|${level}|${period}`;
   const now = new Date();
 
-  const hit = await prisma.adInsightCache.findUnique({ where: { cacheKey: key } });
-  if (hit && hit.expiresAt > now) return { ...hit.payload, fetched_at: hit.fetchedAt, cache: "HIT" };
+  if (!force) {
+    const hit = await prisma.adInsightCache.findUnique({ where: { cacheKey: key } });
+    if (hit && hit.expiresAt > now) return { ...hit.payload, fetched_at: hit.fetchedAt, cache: "HIT" };
+  }
 
   const params = { level, fields: INSIGHT_FIELDS, limit: 500 };
   if (preset) params.date_preset = preset;
@@ -323,9 +334,12 @@ async function pruneInsightCache() {
 module.exports = {
   PRESETS,
   LEVELS,
+  SPENDING,
   accountSummary,
   structure,
   insights,
+  guard,
+  round2,
   pruneInsightCache,
   todaySP,
 };

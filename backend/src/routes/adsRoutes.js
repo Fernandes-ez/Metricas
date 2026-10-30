@@ -3,10 +3,13 @@ const express = require("express");
 const router = express.Router();
 const { listAdAccounts } = require("../services/adsRepository");
 const { PRESETS, LEVELS, accountSummary, structure, insights, todaySP } = require("../services/adsService");
+const { applyChange, listChanges, WriteError } = require("../services/adsWriteService");
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function sendError(res, error) {
+  if (error instanceof WriteError)
+    return res.status(error.httpStatus).json({ error: error.message, ...(error.detalhe ? { detalhe: error.detalhe } : {}) });
   if (error.isAuth)
     return res.status(409).json({
       error: "Token de anúncios inválido ou revogado. Gere outro token no usuário do sistema e rode: npm run ads -- token <LABEL>",
@@ -102,6 +105,55 @@ router.get("/ads/:apelido/insights", async (req, res) => {
     if (!loaded) return;
     const contas = await perAccount(loaded.accounts, (a) => insights(a, { level, ...range }));
     res.json({ apelido: loaded.alias, nivel, contas });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// ---------- Fase 2: escrita ----------
+
+// conta que contém o objeto: com ad_account_id explícito ou, se o perfil tiver uma só, essa
+function pickAccount(accounts, adAccountId) {
+  if (adAccountId) return accounts.find((a) => a.adAccountId === adAccountId) ?? null;
+  return accounts.length === 1 ? accounts[0] : null;
+}
+
+async function write(req, res, campo, valor) {
+  try {
+    const loaded = await loadAccounts(req.params.apelido, res);
+    if (!loaded) return;
+    const account = pickAccount(loaded.accounts, req.body?.ad_account_id);
+    if (!account)
+      return res.status(400).json({ error: "Perfil com mais de uma conta de anúncios: informe ad_account_id" });
+    const out = await applyChange(account, {
+      tipo: req.body?.tipo,
+      id: req.body?.id,
+      campo,
+      valor,
+      origem: ["mcp", "painel", "script"].includes(req.body?.origem) ? req.body.origem : "api",
+      simular: req.body?.simular === true,
+    });
+    res.json(out);
+  } catch (error) {
+    sendError(res, error);
+  }
+}
+
+// d) Pausar/ativar: { tipo: campanha|conjunto|anuncio, id, status: ACTIVE|PAUSED, simular?, origem? }
+router.post("/ads/:apelido/status", (req, res) => write(req, res, "status", req.body?.status));
+
+// e) Orçamento diário: { tipo: campanha|conjunto, id, orcamento_diario (reais), simular?, origem? }
+router.post("/ads/:apelido/budget", (req, res) =>
+  write(req, res, "daily_budget", typeof req.body?.orcamento_diario === "string" ? Number(req.body.orcamento_diario.replace(",", ".")) : req.body?.orcamento_diario),
+);
+
+// f) Histórico de alterações do perfil (?limite=20, máx. 100)
+router.get("/ads/:apelido/changes", async (req, res) => {
+  try {
+    const loaded = await loadAccounts(req.params.apelido, res);
+    if (!loaded) return;
+    const limit = Math.min(Math.max(parseInt(req.query.limite, 10) || 20, 1), 100);
+    res.json(await listChanges(loaded.accounts.map((a) => a.adAccountId), limit));
   } catch (error) {
     sendError(res, error);
   }

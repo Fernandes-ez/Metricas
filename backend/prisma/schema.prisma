@@ -97,3 +97,25 @@ model AdInsightCache {
   @@index([expiresAt])
   @@map("ad_insight_cache")
 }
+
+// Auditoria de toda tentativa de escrita em anúncios (executada, bloqueada pela trava ou com erro).
+model AdChangeLog {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  adAccountId String   @map("ad_account_id")
+  alias       String
+  source      String // 'mcp' | 'painel' | 'script'
+  objectType  String   @map("object_type") // 'campaign' | 'adset' | 'ad'
+  objectId    String   @map("object_id")
+  objectName  String?  @map("object_name")
+  field       String // 'status' | 'daily_budget'
+  oldValue    String?  @map("old_value")
+  newValue    String?  @map("new_value")
+  dailyBefore Decimal? @map("daily_before") @db.Decimal(12, 2) // orçamento diário comprometido antes
+  dailyAfter  Decimal? @map("daily_after") @db.Decimal(12, 2) // e depois (simulado)
+  result      String // 'ok' | 'bloqueado' | 'erro'
+  message     String?
+
+  @@index([adAccountId, createdAt])
+  @@map("ad_change_log")
+}

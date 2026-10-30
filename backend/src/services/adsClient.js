@@ -60,6 +60,31 @@ async function adsGet(path, params, token) {
   return adsFetch(path, params, token);
 }
 
+// POST (escrita). Corpo form-urlencoded; o token vai só no header.
+async function adsPost(path, params, token) {
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v === undefined || v === null) continue;
+    body.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+  }
+  const proof = appSecretProof(token);
+  if (proof) body.set("appsecret_proof", proof);
+
+  const response = await fetch(`${BASE_URL}/${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+    signal: AbortSignal.timeout(20000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    const error = toError(data, response.status);
+    console.error(`Ads API Error (POST ${path}): [${error.code}/${error.subcode ?? "-"}] ${error.message}`);
+    throw error;
+  }
+  return data;
+}
+
 // GET de uma aresta com paginação (até MAX_PAGES páginas)
 async function adsGetAll(path, params, token) {
   const out = [];
@@ -84,4 +109,9 @@ async function cached(key, fn, ttlMs = DEFAULT_TTL_MS) {
   return data;
 }
 
-module.exports = { adsGet, adsGetAll, cached, GRAPH_VERSION };
+// apaga do cache em memória tudo que for da conta (usado depois de uma escrita)
+function invalidate(adAccountId) {
+  for (const k of cache.keys()) if (k.includes(`|${adAccountId}|`) || k.endsWith(`|${adAccountId}`)) cache.delete(k);
+}
+
+module.exports = { adsGet, adsGetAll, adsPost, cached, invalidate, GRAPH_VERSION };
