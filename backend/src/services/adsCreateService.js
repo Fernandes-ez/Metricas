@@ -191,7 +191,9 @@ async function createAdFromPost(account, req) {
           ...plano,
           erro_meta: erroMeta,
           proximo_passo:
-            metodo === "post_existente" && isVideo
+            e.subcode === 1885183
+              ? "O app Metricas está em modo de desenvolvimento no Meta for Developers. Publique o app (modo público/Live) e tente de novo. O upload NÃO resolve: ele também cria o criativo pelo mesmo app."
+              : metodo === "post_existente" && isVideo
               ? 'PERGUNTE AO USUÁRIO antes de seguir: dá para tentar com metodo="upload" (sobe o vídeo do post como anúncio novo, SEM herdar curtidas e comentários do post). Só chame de novo com metodo="upload" se ele autorizar.'
               : "Verifique o erro da Meta (página/Instagram atribuídos ao usuário do sistema, post elegível para anúncio).",
         },
