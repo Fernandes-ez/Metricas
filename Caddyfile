@@ -10,6 +10,14 @@
 		reverse_proxy mcp:3002
 	}
 
+	# Páginas públicas exigidas pela Meta (sem login): /privacidade e /termos, servidas da pasta legal/
+	@legal path /privacidade /termos
+	handle @legal {
+		root * /srv/legal
+		rewrite * {path}.html
+		file_server
+	}
+
 	# todo o resto: painel (tem login próprio)
 	handle {
 		reverse_proxy frontend:3000
