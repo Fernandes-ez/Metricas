@@ -175,6 +175,10 @@ incluem hoje, 3 h para fechados; limpeza diária às 04:37. Token revogado → o
 rotas respondem 409 até você rodar `npm run ads -- token EZF_TECH` de novo. Variáveis opcionais no
 `backend/.env`: `META_GRAPH_VERSION` (padrão `v26.0`) e `META_APP_SECRET` (só se o app exigir App Secret Proof).
 
+Painel: `/anuncios` (todas as contas) e `/anuncios/<APELIDO>?dias=7|14|30` (orçamento x teto, KPIs, gráfico diário,
+campanhas e anúncios). Série diária: `GET /api/ads/:apelido/daily?desde=YYYY-MM-DD&ate=YYYY-MM-DD` (máx. 92 dias).
+O painel guarda as respostas por 5 a 10 min; depois de alterar algo, os números podem levar esse tempo para mudar.
+
 ### 8.1 Escrita (Fase 2): pausar/ativar e orçamento diário
 
 Rotas (JSON no corpo; `simular: true` mostra o efeito sem alterar nada):

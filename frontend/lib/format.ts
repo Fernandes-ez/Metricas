@@ -58,6 +58,49 @@ export function fmtDuration(ms: number): string {
   return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`
 }
 
+// ---------- Anúncios ----------
+
+const moneyFmts = new Map<string, Intl.NumberFormat>()
+/** 12.5 → "R$ 12,50" (na moeda da conta de anúncios). */
+export function fmtMoney(v: number, currency: string | null = 'BRL'): string {
+  const c = currency || 'BRL'
+  let f = moneyFmts.get(c)
+  if (!f) {
+    f = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: c })
+    moneyFmts.set(c, f)
+  }
+  return f.format(v)
+}
+
+/** Hoje (YYYY-MM-DD) no fuso de São Paulo. */
+export const todaySP = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
+
+/** Soma n dias a uma data YYYY-MM-DD. */
+export function addDays(d: string, n: number): string {
+  const t = new Date(`${d}T12:00:00Z`)
+  t.setUTCDate(t.getUTCDate() + n)
+  return t.toISOString().slice(0, 10)
+}
+
+/** "2026-10-30" → "30 de out." */
+export const fmtYmd = (d: string) => dayFmt.format(new Date(`${d}T12:00:00Z`))
+
+/**
+ * Janelas de anúncios por data (como o Gerenciador): os últimos `days` dias COMPLETOS, terminando ontem,
+ * e a janela anterior de mesmo tamanho.
+ */
+export function adWindows(days: number) {
+  const until = addDays(todaySP(), -1)
+  const since = addDays(until, -(days - 1))
+  const prevUntil = addDays(since, -1)
+  const prevSince = addDays(prevUntil, -(days - 1))
+  return {
+    cur: { since, until },
+    prev: { since: prevSince, until: prevUntil },
+    range: `${fmtYmd(since)} a ${fmtYmd(until)}`,
+  }
+}
+
 const pctFmt = new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 })
 /** Fração do alcance (0,114) para "11,4%". */
 export const fmtRate = (frac: number) => pctFmt.format(frac)

@@ -101,6 +101,113 @@ export type SortedMedia = Media & Extras & {
   fetched_at: string | null
 }
 
+// ---------- Anúncios (backend/src/routes/adsRoutes.js) ----------
+
+/** GET /api/ads/accounts */
+export interface AdAccountSummary {
+  apelido: string
+  ad_account_id: string
+  nome: string | null
+  moeda: string | null
+  teto_mensal: Num
+  token: string
+  token_status: string
+  fuso?: string
+  status_conta?: string
+  gasto_mes?: Num
+  uso_teto?: Num
+  erro?: string
+}
+
+/** Métricas normalizadas de uma linha de insights (dinheiro na moeda da conta). */
+export interface AdMetrics {
+  gasto: number
+  impressoes: number
+  alcance?: Num
+  frequencia?: Num
+  cliques_link: number
+  ctr_pct: Num
+  cpm: Num
+  conversas_iniciadas: number
+  novos_contatos_mensagem: number
+  leads: number
+  visualizacoes_video: number
+  custo_por_conversa: Num
+  custo_por_lead: Num
+}
+
+export interface AdRow extends AdMetrics {
+  campanha_id?: string
+  campanha?: string
+  conjunto_id?: string
+  conjunto?: string
+  anuncio_id?: string
+  anuncio?: string
+}
+
+interface AdAccountBase {
+  ad_account_id: string
+  nome: string | null
+  moeda: string | null
+  erro?: string
+}
+
+/** GET /api/ads/:apelido/insights */
+export interface AdInsightsRes {
+  apelido: string
+  nivel: string
+  contas: (AdAccountBase & { totais?: AdMetrics; linhas?: AdRow[]; fetched_at?: string })[]
+}
+
+/** GET /api/ads/:apelido/daily */
+export interface AdDailyRes {
+  apelido: string
+  contas: (AdAccountBase & { totais?: AdMetrics; dias?: (AdMetrics & { data: string })[]; fetched_at?: string })[]
+}
+
+export interface AdAd {
+  id: string
+  nome: string
+  status: string
+  status_efetivo: string
+}
+export interface AdSet {
+  id: string
+  nome: string
+  status: string
+  status_efetivo: string
+  orcamento_diario: Num
+  orcamento_total: Num
+  otimizacao: string | null
+  destino: string | null
+  anuncios: AdAd[]
+}
+export interface AdCampaign {
+  id: string
+  nome: string
+  objetivo: string
+  status: string
+  status_efetivo: string
+  orcamento_diario: Num
+  orcamento_total: Num
+  orcamento_no: 'campanha' | 'conjunto'
+  conjuntos: AdSet[]
+}
+
+/** GET /api/ads/:apelido/campaigns */
+export interface AdCampaignsRes {
+  apelido: string
+  status: string
+  contas: (AdAccountBase & {
+    campanhas?: AdCampaign[]
+    orcamento_diario_ativo?: number
+    projecao_mensal?: number
+    teto_mensal?: Num
+    folga_mensal?: Num
+    campanhas_sem_entrega?: { id: string; nome: string; motivo: string }[]
+  })[]
+}
+
 /** Resultado de uma chamada ao backend, sem lançar para os casos esperados. */
 export type Res<T> =
   | { ok: true; data: T; /** posts ainda sendo atualizados em segundo plano (X-Insights-Pending) */ pending?: number }

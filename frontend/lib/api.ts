@@ -1,9 +1,22 @@
 // Único ponto de acesso ao backend. Só roda no servidor do Next (BACKEND_URL nunca vai ao navegador).
 import { cacheLife } from 'next/cache'
-import type { Account, AccountInsights, AccountStatus, Media, MediaInsights, Res, SortKey, SortedMedia } from './types'
+import type {
+  Account,
+  AccountInsights,
+  AccountStatus,
+  AdAccountSummary,
+  AdCampaignsRes,
+  AdDailyRes,
+  AdInsightsRes,
+  Media,
+  MediaInsights,
+  Res,
+  SortKey,
+  SortedMedia,
+} from './types'
 
 const BACKEND = process.env.BACKEND_URL ?? 'http://backend:3001'
-const TIMEOUT_MS = 12_000
+const TIMEOUT_MS = 25_000 // a Marketing API é mais lenta que a do Instagram
 
 class Transient extends Error {}
 
@@ -59,6 +72,21 @@ export const getMedia = (alias: string, limit = 24) =>
 
 export const getMediaInsights = (account: string, id: string) =>
   get<MediaInsights>(`/api/media/${enc(id)}/insights?account=${enc(account)}`)
+
+// ---------- Anúncios ----------
+// 404 = perfil sem conta de anúncios cadastrada; 409 = token de anúncios inválido.
+
+export const getAdAccounts = () => get<AdAccountSummary[]>('/api/ads/accounts')
+
+export const getAdCampaigns = (alias: string) => get<AdCampaignsRes>(`/api/ads/${enc(alias)}/campaigns?status=todas`)
+
+export type AdLevel = 'conta' | 'campanha' | 'conjunto' | 'anuncio'
+/** desde/ate em YYYY-MM-DD (fuso da conta), inclusivos. */
+export const getAdInsights = (alias: string, nivel: AdLevel, desde: string, ate: string) =>
+  get<AdInsightsRes>(`/api/ads/${enc(alias)}/insights?nivel=${nivel}&desde=${desde}&ate=${ate}`)
+
+export const getAdDaily = (alias: string, desde: string, ate: string) =>
+  get<AdDailyRes>(`/api/ads/${enc(alias)}/daily?desde=${desde}&ate=${ate}`)
 
 /** Posts ordenados por métrica (insights em cache no backend). Ordena entre os `limite` mais recentes. */
 export const getMediaSorted = (alias: string, ordenar: SortKey, ordem: 'asc' | 'desc', limite = 30) =>

@@ -2,7 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { listAdAccounts } = require("../services/adsRepository");
-const { PRESETS, LEVELS, accountSummary, structure, insights, todaySP } = require("../services/adsService");
+const { PRESETS, LEVELS, accountSummary, structure, insights, daily, todaySP } = require("../services/adsService");
 const { applyChange, listChanges, WriteError } = require("../services/adsWriteService");
 const { createAdFromPost } = require("../services/adsCreateService");
 
@@ -106,6 +106,25 @@ router.get("/ads/:apelido/insights", async (req, res) => {
     if (!loaded) return;
     const contas = await perAccount(loaded.accounts, (a) => insights(a, { level, ...range }));
     res.json({ apelido: loaded.alias, nivel, contas });
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// c2) Série diária do perfil (nível conta): ?desde=YYYY-MM-DD&ate=YYYY-MM-DD (máx. 92 dias)
+router.get("/ads/:apelido/daily", async (req, res) => {
+  const { desde, ate } = req.query;
+  if (!DATE.test(desde || "") || !DATE.test(ate || ""))
+    return res.status(400).json({ error: "desde e ate são obrigatórios, no formato YYYY-MM-DD" });
+  if (desde > ate) return res.status(400).json({ error: "desde deve ser menor ou igual a ate" });
+  if (ate > todaySP()) return res.status(400).json({ error: "ate não pode estar no futuro" });
+  if ((new Date(ate) - new Date(desde)) / 86400000 > 92)
+    return res.status(400).json({ error: "Intervalo máximo de 92 dias" });
+  try {
+    const loaded = await loadAccounts(req.params.apelido, res);
+    if (!loaded) return;
+    const contas = await perAccount(loaded.accounts, (a) => daily(a, { since: desde, until: ate }));
+    res.json({ apelido: loaded.alias, contas });
   } catch (error) {
     sendError(res, error);
   }

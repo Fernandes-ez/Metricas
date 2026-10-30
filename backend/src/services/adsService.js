@@ -329,6 +329,43 @@ async function insights(account, { level, preset, since, until, force = false })
   return { ...payload, fetched_at: now, cache: "MISS" };
 }
 
+// Série diária (nível conta) entre since e until (YYYY-MM-DD, inclusivo). Dias sem entrega vêm zerados.
+const addDay = (d, n = 1) => {
+  const t = new Date(`${d}T12:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+};
+
+async function daily(account, { since, until }) {
+  const key = `${account.adAccountId}|daily|${since}..${until}`;
+  const now = new Date();
+  const hit = await prisma.adInsightCache.findUnique({ where: { cacheKey: key } });
+  if (hit && hit.expiresAt > now) return { ...hit.payload, fetched_at: hit.fetchedAt, cache: "HIT" };
+
+  const raw = await guard(account, () =>
+    adsGetAll(
+      `${account.adAccountId}/insights`,
+      { level: "account", fields: INSIGHT_FIELDS, time_range: { since, until }, time_increment: 1, limit: 500 },
+      account.token,
+    ),
+  );
+  const byDay = new Map(raw.map((r) => [r.date_start, normalizeRow(r, "account")]));
+  const empty = normalizeRow({}, "account");
+  const dias = [];
+  for (let d = since; d <= until; d = addDay(d)) dias.push({ data: d, ...(byDay.get(d) ?? empty) });
+
+  const payload = { periodo: { desde: since, ate: until }, totais: totals(dias), dias };
+  const expiresAt = new Date(now.getTime() + ttlMs({ until }));
+  await prisma.adInsightCache
+    .upsert({
+      where: { cacheKey: key },
+      create: { cacheKey: key, adAccountId: account.adAccountId, payload, fetchedAt: now, expiresAt },
+      update: { payload, fetchedAt: now, expiresAt },
+    })
+    .catch(console.error);
+  return { ...payload, fetched_at: now, cache: "MISS" };
+}
+
 // limpeza diária do cache vencido há mais de 7 dias
 async function pruneInsightCache() {
   const { count } = await prisma.adInsightCache.deleteMany({
@@ -344,6 +381,7 @@ module.exports = {
   accountSummary,
   structure,
   insights,
+  daily,
   guard,
   round2,
   pruneInsightCache,
