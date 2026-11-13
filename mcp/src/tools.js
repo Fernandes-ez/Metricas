@@ -271,6 +271,44 @@ export function buildServer() {
     ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/ads`, body, 150_000),
   );
 
+  // ---------- Anúncios: criação de campanha e conjunto (Fase 3) ----------
+
+  s.registerTool(
+    'criar_campanha',
+    {
+      description:
+        'Cria uma campanha NOVA no Meta Ads do perfil, sempre PAUSADA (não gasta nada). O orçamento não fica na campanha (ABO): ele é definido no conjunto com criar_conjunto. Objetivo padrão OUTCOME_LEADS (o usado nas campanhas de WhatsApp da conta). Depois de criar, crie o conjunto (criar_conjunto) e o anúncio (criar_anuncio_de_post). Só ative quando o usuário pedir, com alterar_status, que passa pela trava do teto. Confirme nome e objetivo com o usuário antes de criar.',
+      inputSchema: {
+        apelido: alias,
+        nome: z.string().min(1).max(200).describe('Nome da campanha (ex.: "[13/11] Teste Prof. Natália")'),
+        objetivo: z.enum(['OUTCOME_LEADS', 'OUTCOME_TRAFFIC', 'OUTCOME_ENGAGEMENT']).default('OUTCOME_LEADS'),
+        simular,
+        ad_account_id: actId,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/campaigns`, body),
+  );
+
+  s.registerTool(
+    'criar_conjunto',
+    {
+      description:
+        'Cria um conjunto de anúncios NOVO (destino WhatsApp), sempre PAUSADO, numa campanha do perfil. Copia o público (targeting), a página e a otimização de um conjunto existente (copiar_de_conjunto_id, id de campanhas_anuncio), para o teste sair com a mesma audiência do que já roda. Orçamento diário em reais, no próprio conjunto. Não gasta nada até ser ativado com alterar_status (passa pela trava do teto). Confirme com o usuário a campanha, o conjunto de origem e o orçamento antes de criar.',
+      inputSchema: {
+        apelido: alias,
+        campanha_id: objId.describe('Id da campanha onde o conjunto vai ficar (campanhas_anuncio)'),
+        nome: z.string().min(1).max(200),
+        orcamento_diario: z.number().positive().max(100000).describe('Orçamento diário do conjunto, em reais'),
+        copiar_de_conjunto_id: objId.describe('Id de um conjunto desta conta, de onde copiar público, página e otimização'),
+        simular,
+        ad_account_id: actId,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    ({ apelido, ...body }) => post(`/api/ads/${encodeURIComponent(apelido)}/adsets`, body),
+  );
+
   s.registerTool(
     'historico_alteracoes',
     {

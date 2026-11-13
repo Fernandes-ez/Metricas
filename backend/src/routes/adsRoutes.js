@@ -5,6 +5,7 @@ const { listAdAccounts } = require("../services/adsRepository");
 const { PRESETS, LEVELS, accountSummary, structure, insights, daily, todaySP } = require("../services/adsService");
 const { applyChange, listChanges, WriteError } = require("../services/adsWriteService");
 const { createAdFromPost } = require("../services/adsCreateService");
+const { createCampaign, createAdSet } = require("../services/adsStructureService");
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -186,6 +187,54 @@ router.post("/ads/:apelido/ads", async (req, res) => {
         metodo: b.metodo,
         pagina_id: b.pagina_id,
         video_id: b.video_id,
+        simular: b.simular === true,
+        origem: ["mcp", "painel", "script"].includes(b.origem) ? b.origem : "api",
+      }),
+    );
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// h) Criar campanha (PAUSADA): { nome, objetivo?: OUTCOME_LEADS (padrão) | OUTCOME_TRAFFIC | OUTCOME_ENGAGEMENT, simular?, origem? }
+router.post("/ads/:apelido/campaigns", async (req, res) => {
+  try {
+    const loaded = await loadAccounts(req.params.apelido, res);
+    if (!loaded) return;
+    const account = pickAccount(loaded.accounts, req.body?.ad_account_id);
+    if (!account)
+      return res.status(400).json({ error: "Perfil com mais de uma conta de anúncios: informe ad_account_id" });
+    const b = req.body || {};
+    res.json(
+      await createCampaign(account, {
+        nome: b.nome,
+        objetivo: b.objetivo,
+        simular: b.simular === true,
+        origem: ["mcp", "painel", "script"].includes(b.origem) ? b.origem : "api",
+      }),
+    );
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+// i) Criar conjunto (PAUSADO) copiando público, página e otimização de um conjunto existente:
+//    { campanha_id, nome, orcamento_diario (reais), copiar_de_conjunto_id, simular?, origem? }
+router.post("/ads/:apelido/adsets", async (req, res) => {
+  try {
+    const loaded = await loadAccounts(req.params.apelido, res);
+    if (!loaded) return;
+    const account = pickAccount(loaded.accounts, req.body?.ad_account_id);
+    if (!account)
+      return res.status(400).json({ error: "Perfil com mais de uma conta de anúncios: informe ad_account_id" });
+    const b = req.body || {};
+    const orcamento = typeof b.orcamento_diario === "string" ? Number(b.orcamento_diario.replace(",", ".")) : b.orcamento_diario;
+    res.json(
+      await createAdSet(account, {
+        campanha_id: b.campanha_id,
+        nome: typeof b.nome === "string" ? b.nome.trim() : b.nome,
+        orcamento_diario: orcamento,
+        copiar_de_conjunto_id: b.copiar_de_conjunto_id,
         simular: b.simular === true,
         origem: ["mcp", "painel", "script"].includes(b.origem) ? b.origem : "api",
       }),
