@@ -11,6 +11,17 @@ const { WriteError, withLock, log } = require("./adsWriteService");
 const OBJETIVOS = new Set(["OUTCOME_LEADS", "OUTCOME_TRAFFIC", "OUTCOME_ENGAGEMENT"]);
 const ID = /^\d{5,30}$/;
 
+// Lance do conjunto novo. A Meta exige bid_amount quando o tipo tem teto (LOWEST_COST_WITH_BID_CAP / COST_CAP)
+// e recusa o tipo sem o valor (erro 100, subcode 2490487). Copia o teto da origem junto com o tipo; se a origem
+// não tiver lance próprio (ex.: conjunto de campanha CBO, onde o lance fica na campanha), usa
+// LOWEST_COST_WITHOUT_CAP, que não exige valor.
+const CAP_STRATEGIES = new Set(["LOWEST_COST_WITH_BID_CAP", "COST_CAP"]);
+function lanceConfig(config) {
+  if (CAP_STRATEGIES.has(config.bid_strategy) && config.bid_amount)
+    return { bid_strategy: config.bid_strategy, bid_amount: config.bid_amount };
+  return { bid_strategy: "LOWEST_COST_WITHOUT_CAP" };
+}
+
 const validNome = (nome) => {
   const n = String(nome || "").trim();
   if (!n || n.length > 200) throw new WriteError(400, "nome é obrigatório (até 200 caracteres)");
@@ -129,7 +140,7 @@ async function createAdSet(account, req) {
     config = await guard(account, () =>
       adsGet(
         fonteId,
-        { fields: "targeting,promoted_object,optimization_goal,destination_type,billing_event,bid_strategy" },
+        { fields: "targeting,promoted_object,optimization_goal,destination_type,billing_event,bid_strategy,bid_amount" },
         account.token,
       ),
     );
@@ -149,7 +160,7 @@ async function createAdSet(account, req) {
     destination_type: "WHATSAPP",
     promoted_object: config.promoted_object,
     targeting: config.targeting,
-    ...(config.bid_strategy ? { bid_strategy: config.bid_strategy } : {}),
+    ...lanceConfig(config),
   };
 
   const plano = {
@@ -158,6 +169,9 @@ async function createAdSet(account, req) {
     campanha: { id: campaign.id, nome: campaign.nome },
     conjunto: { nome, orcamento_diario: orcamento, otimizacao: payload.optimization_goal, destino: "WHATSAPP" },
     copiado_de: { id: fonte.id, nome: fonte.nome },
+    lance: payload.bid_amount
+      ? `${payload.bid_strategy} (teto ${payload.bid_amount} centavos, copiado da origem)`
+      : payload.bid_strategy,
     status_inicial: "PAUSED",
   };
   if (req.simular) return { ...plano, executado: false, simulacao: true, mensagem: "Simulação: nada foi criado." };
