@@ -145,6 +145,14 @@ export const provider = {
   },
 
   async verifyAccessToken(token) {
+    const staticToken = process.env.MCP_STATIC_TOKEN;
+    if (staticToken && typeof token === 'string') {
+      const a = Buffer.from(token);
+      const b = Buffer.from(staticToken);
+      if (a.length === b.length && timingSafeEqual(a, b)) {
+        return { token, clientId: 'static-client', scopes: [SCOPE], expiresAt: now() + ACCESS_TTL };
+      }
+    }
     const t = state.tokens[sha(token)];
     if (!t || t.type !== 'access' || t.exp < now()) throw new InvalidTokenError('token inválido ou expirado');
     return { token, clientId: t.clientId, scopes: t.scopes, expiresAt: t.exp, resource: t.resource && new URL(t.resource) };
