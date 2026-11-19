@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { igGet, cacheHeader } = require("../services/igClient");
+const { igGet, cacheHeader, businessDiscovery } = require("../services/igClient");
 const prisma = require("../services/db");
 const { getAccount, listActiveAccounts } = require("../services/accountRepository");
 const {
@@ -244,6 +244,32 @@ router.get("/media/:mediaId/insights", async (req, res) => {
     const reel = await isReelById(account, mediaId);
     res.json(withRates(await mediaInsights(mediaId, account.token, { reel })));
   } catch (error) {
+    res.status(502).json({ error: error.message, code: error.code });
+  }
+});
+
+// e) Perfil de concorrente (Business Discovery)
+router.get("/competitors/:usuario", async (req, res) => {
+  const usuario = String(req.params.usuario).replace(/^@/, "").trim();
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(usuario))
+    return res.status(400).json({ error: "Usuário inválido" });
+
+  const account = await loadAccount(req.query.conta, res, "Conta de referência não encontrada");
+  if (!account) return;
+
+  const limit = Math.min(Math.max(parseInt(req.query.limite ?? req.query.limit, 10) || 12, 1), 50);
+  try {
+    const { business_discovery: bd } = await businessDiscovery(account.userId, usuario, limit, account.token);
+    res.json({
+      username: bd.username,
+      followers_count: bd.followers_count,
+      media_count: bd.media_count,
+      posts: bd.media?.data ?? [],
+    });
+  } catch (error) {
+    // código 100 costuma indicar conta pessoal ou inexistente; confirmar no teste real
+    if (error.code === 100)
+      return res.status(422).json({ error: "Conta não é profissional/criador ou não existe", code: error.code });
     res.status(502).json({ error: error.message, code: error.code });
   }
 });

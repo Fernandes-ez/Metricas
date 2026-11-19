@@ -64,4 +64,12 @@ async function igFetch(path, params, token) {
   return data;
 }
 
-module.exports = { igGet, cacheHeader };
+// Business Discovery: lê perfis profissionais de outras contas com o token da conta própria
+function businessDiscovery(ownUserId, username, limit, token) {
+  const fields =
+    `business_discovery.username(${username}){followers_count,media_count,username,` +
+    `media.limit(${limit}){id,caption,media_type,timestamp,permalink,like_count,comments_count,view_count}}`;
+  return igGet(`${ownUserId}`, { fields }, token);
+}
+
+module.exports = { igGet, cacheHeader, businessDiscovery };

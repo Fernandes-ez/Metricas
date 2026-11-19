@@ -163,6 +163,22 @@ export function buildServer() {
     ({ id, conta }) => get(`/api/media/${id}/insights?account=${encodeURIComponent(conta)}`),
   );
 
+  s.registerTool(
+    'perfil_concorrente',
+    {
+      description:
+        'Lê um perfil profissional ou de criador de OUTRA conta do Instagram (Business Discovery): seguidores, quantidade de posts e posts recentes com curtidas, comentários e visualizações (vídeos). Não traz compartilhamentos nem salvamentos de terceiros. Contas pessoais não aparecem. A conta de referência (conta) só fornece a credencial.',
+      inputSchema: {
+        usuario: z.string().regex(/^@?[A-Za-z0-9._]{1,30}$/).describe('@ do concorrente (com ou sem o @)'),
+        conta: alias.describe('Conta própria usada como credencial (ex.: AQUA)'),
+        limite: z.number().int().min(1).max(50).default(12).describe('Quantidade de posts recentes'),
+      },
+      annotations: ro,
+    },
+    ({ usuario, conta, limite }) =>
+      get(`/api/competitors/${encodeURIComponent(usuario.replace(/^@/, ''))}?conta=${encodeURIComponent(conta)}&limite=${limite}`, { timeoutMs: 20_000 }),
+  );
+
   // ---------- Anúncios (Meta Ads, somente leitura) ----------
 
   s.registerTool(
